@@ -98,10 +98,10 @@ label{display:block;font-size:13px;font-weight:400;color:var(--muted);margin:0 0
 
 /* ---------- app chrome ---------- */
 /* phone-first; on a laptop it stays a phone-width column rather than stretching */
-#app,#plan,#site,#emails{min-height:100%;display:flex;flex-direction:column;
+#app,#plan,#site{min-height:100%;display:flex;flex-direction:column;
   max-width:540px;margin:0 auto;width:100%}
 @media(min-width:560px){
-  #app,#plan,#site,#emails{border-inline:1px solid var(--line)}
+  #app,#plan,#site{border-inline:1px solid var(--line)}
   .cell{aspect-ratio:1/.86}
 }
 header{position:sticky;top:0;z-index:20;background:rgba(0,0,0,.8);
@@ -631,56 +631,6 @@ main{flex:1;padding:16px 12px 0}
 .svnav b{font-size:14px;font-weight:600;color:#fff;background:rgba(0,0,0,.6);
   padding:8px 14px;border-radius:20px;font-variant-numeric:tabular-nums}
 
-/* ---------- emails ----------
-   A way in from Gmail, nothing more: you find the invoice yourself, open it
-   here and send the attachment into the receipt form you already use. */
-.gmbar{display:flex;align-items:center;gap:10px;padding:11px 13px;margin-bottom:14px;
-  background:var(--surface);border-radius:var(--radius)}
-.gmdot{width:9px;height:9px;border-radius:5px;flex:none;background:var(--faint)}
-.gmdot.on{background:#30d158}
-.gmbar .who{flex:1;min-width:0;font-size:14px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gmbar .who b{display:block;font-weight:600;font-size:14.5px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gmbar .who span{display:block;font-size:12px;color:var(--muted)}
-.gmbar button{flex:none;font-size:14px;font-weight:500;color:var(--accent);padding:6px 4px}
-
-.emrow{display:flex;flex-direction:column;gap:3px;padding:12px 13px;width:100%;
-  text-align:left;position:relative;min-height:64px}
-.emrow + .emrow::before{content:"";position:absolute;top:0;left:13px;right:13px;height:1px;
-  background:var(--line);transform:scaleY(.5)}
-.emrow:active{background:var(--surface-2)}
-.emtop{display:flex;align-items:baseline;gap:8px}
-.emtop b{flex:1;min-width:0;font-size:14.5px;font-weight:600;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.emtop span{flex:none;font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
-.emsub{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.emsnip{font-size:12.5px;color:var(--muted);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.emclip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;
-  color:var(--accent);margin-top:3px}
-
-.emfacts{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
-.emfact{display:flex;gap:10px;font-size:14.5px}
-.emfact b{width:64px;flex:none;color:var(--muted);font-weight:400;font-size:13.5px}
-.emfact span{flex:1;min-width:0;word-break:break-word}
-.embody{font-size:14.5px;line-height:1.5;white-space:pre-wrap;color:var(--muted);
-  max-height:210px;overflow-y:auto;background:var(--surface-2);border-radius:10px;
-  padding:12px 13px}
-.ematt{display:flex;align-items:center;gap:11px;padding:11px 12px;width:100%;
-  text-align:left;position:relative;min-height:58px}
-.ematt + .ematt::before{content:"";position:absolute;top:0;left:12px;right:12px;height:1px;
-  background:var(--line);transform:scaleY(.5)}
-.ematt:active{background:var(--surface-2)}
-.emkind{width:38px;height:38px;border-radius:9px;flex:none;display:grid;place-items:center;
-  background:var(--surface-2);font-size:10px;font-weight:700;color:var(--faint)}
-.ematt .meta{flex:1;min-width:0}
-.ematt .meta b{display:block;font-size:14.5px;font-weight:500;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ematt .meta span{display:block;font-size:12px;color:var(--muted)}
-.emdone{font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
-  color:#ffa62b;background:rgba(255,159,10,.16);border-radius:20px;padding:3px 8px;flex:none}
-
 /* the status picker on the form */
 .statuses{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .statuses button{padding:11px 8px;border-radius:10px;background:var(--surface-2);
@@ -896,26 +846,6 @@ main{flex:1;padding:16px 12px 0}
 
 <input type="file" id="sitefiles" accept="image/*" multiple class="hide">
 
-<!-- ============ EMAILS ============ -->
-<section id="emails" class="hide">
-  <header>
-    <div class="hrow">
-      <button class="icb" id="emback" aria-label="Back to receipts">
-        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <div class="mnav"><b class="mtitle" style="pointer-events:none">Emails</b></div>
-      <button class="icb" id="emrefresh" aria-label="Refresh">
-        <svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
-      </button>
-    </div>
-  </header>
-
-  <main>
-    <div class="gmbar" id="gmbar"></div>
-    <div id="emlist"></div>
-  </main>
-</section>
-
 <!-- ============ LIVE CAMERA ============ -->
 <section id="cam" class="hide">
   <video id="camvid" playsinline autoplay muted></video>
@@ -1118,7 +1048,6 @@ function showAuth() {
   closeCamera();
   showPlanning(false);
   showSite(false);
-  showEmails(false);
   $('#app').classList.add('hide');
   $('#auth').classList.remove('hide');
   $('#sheets').innerHTML = '';
@@ -2089,7 +2018,7 @@ function pickProjectInline(onPick) {
 /* ---------- the page ---------- */
 function showPlanning(on) {
   $('#plan').classList.toggle('hide', !on);
-  if (on) { $('#site').classList.add('hide'); $('#emails').classList.add('hide'); }
+  if (on) $('#site').classList.add('hide');      // one section at a time
   $('#app').classList.toggle('hide', on);
   window.scrollTo(0, 0);
 }
@@ -2573,7 +2502,7 @@ async function loadSiteRecords() {
 
 function showSite(on) {
   $('#site').classList.toggle('hide', !on);
-  if (on) { $('#plan').classList.add('hide'); $('#emails').classList.add('hide'); }
+  if (on) $('#plan').classList.add('hide');      // one section at a time
   $('#app').classList.toggle('hide', on);
   window.scrollTo(0, 0);
 }
@@ -2958,454 +2887,6 @@ function openSiteForm(rec) {
 }
 
 /* ============================================================
-   EMAILS — bringing an invoice in from Gmail
-   You find the email yourself; this is only the way in. Nothing searches the
-   inbox, nothing is scanned for invoices, and no email is ever stored or turned
-   into a receipt on its own — an attachment becomes a receipt only when you
-   press Add to Receipts, and then it goes through the same receipt form,
-   the same 20% VAT default and the same save as every other receipt.
-
-   Sign-in uses Google Identity Services, which is Google's supported flow for
-   a browser app: there is no client secret anywhere, only the public client id,
-   and the access token lives in this tab for about an hour and is never stored.
-   The scope asked for is gmail.readonly and nothing else, so the app cannot
-   send, delete or change anything in the mailbox.
-   ============================================================ */
-const GOOGLE_CLIENT_ID = '000000000000-testtesttesttesttesttest.apps.googleusercontent.com';
-const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
-const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me';
-
-let gmailToken = null;        // { access_token, expires } — this tab only
-let gmailAddress = null;      // the connected mailbox, for showing on screen
-let gmailClient = null;       // the Google Identity Services token client
-let emailList = [];
-let emailImport = null;       // what is being brought in, while it is in flight
-
-const gmailConfigured = () => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID);
-const gmailLive = () => !!(gmailToken && gmailToken.access_token && Date.now() < gmailToken.expires);
-
-function loadGis() {
-  if (window.google && window.google.accounts && window.google.accounts.oauth2)
-    return Promise.resolve();
-  return loadScript('https://accounts.google.com/gsi/client', 12000);
-}
-
-/* Every Gmail call goes through here, so one expired or revoked connection is
-   handled in one place rather than in six. */
-async function gmailFetch(path, opts) {
-  if (!gmailLive()) throw new Error('gmail-disconnected');
-  const res = await fetch(GMAIL_API + path, Object.assign({}, opts, {
-    headers: Object.assign({ Authorization: 'Bearer ' + gmailToken.access_token },
-                           (opts && opts.headers) || {})
-  }));
-  if (res.status === 401 || res.status === 403) {
-    gmailToken = null;                       // it has lapsed or been taken away
-    throw new Error('gmail-disconnected');
-  }
-  if (!res.ok) {
-    let detail = '';
-    try { detail = ((await res.json()).error || {}).message || ''; } catch { /* no body */ }
-    throw new Error(detail || ('Gmail returned ' + res.status));
-  }
-  return res.json();
-}
-
-function gmailError(e) {
-  const m = String((e && e.message) || e || '');
-  if (m === 'gmail-disconnected')
-    return 'The Gmail connection has expired or been withdrawn. Connect Gmail again.';
-  if (/popup|closed|denied|access_denied/i.test(m))
-    return 'Gmail sign-in was closed before it finished. Tap Connect Gmail to try again.';
-  if (/failed|timed out|network/i.test(m))
-    return 'Could not reach Gmail. Check your signal and try again.';
-  return m || 'Something went wrong talking to Gmail.';
-}
-
-async function connectGmail() {
-  if (!gmailConfigured()) {
-    toast('Gmail is not set up on this build yet', true);
-    return false;
-  }
-  busy(true, 'Opening Google…');
-  try {
-    await loadGis();
-  } catch {
-    busy(false);
-    toast('Could not load Google sign-in. Check your signal and try again.', true);
-    return false;
-  }
-
-  const token = await new Promise(resolve => {
-    let settled = false;
-    const done = v => { if (!settled) { settled = true; resolve(v); } };
-    try {
-      gmailClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID,
-        scope: GMAIL_SCOPE,
-        callback: r => done(r && r.access_token ? r : null),
-        error_callback: () => done(null)
-      });
-      gmailClient.requestAccessToken();
-    } catch { done(null); }
-    // the window can be dismissed without either callback firing
-    setTimeout(() => done(null), 120000);
-  });
-
-  if (!token) { busy(false); toast('Gmail was not connected.', true); return false; }
-
-  gmailToken = {
-    access_token: token.access_token,
-    expires: Date.now() + (Number(token.expires_in || 3600) - 60) * 1000
-  };
-  try {
-    const me = await gmailFetch('/profile');
-    gmailAddress = me.emailAddress || null;
-  } catch { gmailAddress = null; }
-  busy(false);
-  return true;
-}
-
-function disconnectGmail() {
-  const tok = gmailToken && gmailToken.access_token;
-  gmailToken = null; gmailAddress = null; emailList = [];
-  // hand the token back so it stops working immediately, rather than just
-  // forgetting it on this device
-  try { if (tok && window.google) google.accounts.oauth2.revoke(tok, () => {}); } catch { /* already gone */ }
-  paintEmails();
-  toast('Gmail disconnected');
-}
-
-/* ---------- the page ---------- */
-function showEmails(on) {
-  $('#emails').classList.toggle('hide', !on);
-  if (on) { $('#plan').classList.add('hide'); $('#site').classList.add('hide'); }
-  $('#app').classList.toggle('hide', on);
-  window.scrollTo(0, 0);
-}
-
-function openEmails() {
-  showEmails(true);
-  paintEmails();
-  if (gmailLive() && !emailList.length) refreshEmails();
-}
-
-$('#emback').onclick = () => showEmails(false);
-$('#emrefresh').onclick = () => {
-  if (!gmailLive()) { toast('Connect Gmail first'); return; }
-  refreshEmails();
-};
-
-async function refreshEmails() {
-  busy(true, 'Loading your email…');
-  try {
-    const list = await gmailFetch('/messages?maxResults=25');
-    const ids = (list.messages || []).map(m => m.id);
-    const out = [];
-    for (let i = 0; i < ids.length; i++) {
-      busy(true, `Loading email ${i + 1} of ${ids.length}…`, (i + 1) / ids.length);
-      try {
-        const m = await gmailFetch('/messages/' + ids[i] +
-          '?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date');
-        const h = {};
-        ((m.payload && m.payload.headers) || []).forEach(x => { h[x.name.toLowerCase()] = x.value; });
-        out.push({
-          id: m.id, from: h.from || '', subject: h.subject || '(no subject)',
-          date: h.date || '', snippet: m.snippet || '',
-          hasAttachment: /\battachment\b/i.test(String(m.payload && m.payload.mimeType)) ||
-                         ((m.payload && m.payload.parts) || []).some(p => p.filename)
-        });
-      } catch (e) {
-        if (String(e.message) === 'gmail-disconnected') throw e;
-        // one unreadable message must not sink the whole list
-      }
-    }
-    emailList = out;
-    busy(false);
-    paintEmails();
-  } catch (e) {
-    busy(false);
-    paintEmails();
-    toast(gmailError(e), true);
-  }
-}
-
-const emailWho = from => {
-  const m = String(from).match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
-  return (m && m[1].trim()) || (m && m[2]) || String(from) || 'Unknown sender';
-};
-const emailWhen = d => {
-  const t = new Date(d);
-  return isNaN(t) ? '' : t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-};
-const emailYmd = d => { const t = new Date(d); return isNaN(t) ? ymd(new Date()) : ymd(t); };
-
-function paintEmails() {
-  const bar = $('#gmbar');
-  bar.innerHTML = '';
-  const live = gmailLive();
-
-  if (!gmailConfigured()) {
-    bar.appendChild(el('span', { class: 'gmdot' }));
-    bar.appendChild(el('div', { class: 'who' }, [
-      el('b', { text: 'Gmail not set up' }),
-      el('span', { text: 'This build has no Google client id yet' })
-    ]));
-  } else {
-    bar.appendChild(el('span', { class: 'gmdot' + (live ? ' on' : '') }));
-    bar.appendChild(el('div', { class: 'who' }, [
-      el('b', { text: live ? (gmailAddress || 'Gmail connected') : 'Gmail not connected' }),
-      el('span', { text: live ? 'Read-only access' : 'Connect to bring an invoice in' })
-    ]));
-    bar.appendChild(el('button', {
-      id: live ? 'gmdisconnect' : 'gmconnect',
-      text: live ? 'Disconnect' : 'Connect Gmail',
-      onclick: live
-        ? disconnectGmail
-        : async () => { if (await connectGmail()) { paintEmails(); refreshEmails(); } }
-    }));
-  }
-
-  const host = $('#emlist');
-  host.innerHTML = '';
-
-  if (!gmailConfigured()) {
-    host.appendChild(el('p', { class: 'empty', text:
-      'Gmail importing needs a Google client id adding to the app before it can be used.' }));
-    return;
-  }
-  if (!live) {
-    host.appendChild(el('p', { class: 'empty', text:
-      'Connect Gmail to open an email and bring its invoice into your receipts. '
-      + 'The app only ever reads your mail — it cannot send, change or delete anything.' }));
-    return;
-  }
-  if (!emailList.length) {
-    host.appendChild(el('p', { class: 'empty', text: 'No email loaded. Tap refresh at the top.' }));
-    return;
-  }
-
-  host.appendChild(el('div', { class: 'card' }, emailList.map(m =>
-    el('button', { class: 'emrow', onclick: () => openEmail(m) }, [
-      el('div', { class: 'emtop' }, [
-        el('b', { text: emailWho(m.from) }),
-        el('span', { text: emailWhen(m.date) })
-      ]),
-      el('div', { class: 'emsub', text: m.subject }),
-      el('div', { class: 'emsnip', text: m.snippet }),
-      m.hasAttachment ? el('span', { class: 'emclip', text: '📎 Attachment' }) : null
-    ]))));
-}
-
-/* ---------- one email ---------- */
-function decodeB64Url(data) {
-  const b = String(data || '').replace(/-/g, '+').replace(/_/g, '/');
-  const bin = atob(b + '==='.slice((b.length + 3) % 4));
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-const b64UrlToText = data => new TextDecoder().decode(decodeB64Url(data));
-
-/* Walk the MIME tree once: the readable body, and every real attachment. */
-function walkParts(part, out) {
-  if (!part) return out;
-  const mime = part.mimeType || '';
-  const body = part.body || {};
-  if (part.filename && (body.attachmentId || body.data)) {
-    out.files.push({
-      filename: part.filename, mimeType: mime || 'application/octet-stream',
-      size: body.size || 0, attachmentId: body.attachmentId || null, data: body.data || null
-    });
-  } else if (mime === 'text/plain' && body.data && !out.text) {
-    out.text = b64UrlToText(body.data);
-  } else if (mime === 'text/html' && body.data && !out.html) {
-    out.html = b64UrlToText(body.data);
-  }
-  (part.parts || []).forEach(p => walkParts(p, out));
-  return out;
-}
-
-const stripHtml = h => String(h)
-  .replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<script[\s\S]*?<\/script>/gi, ' ')
-  .replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]+>/g, ' ')
-  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-  .replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
-  .replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-
-const SUPPORTED_ATTACHMENT = /^(application\/pdf|image\/(jpeg|jpg|png|heic|heif|webp))$/i;
-
-async function openEmail(m) {
-  busy(true, 'Opening…');
-  let full;
-  try {
-    full = await gmailFetch('/messages/' + m.id + '?format=full');
-  } catch (e) {
-    busy(false); toast(gmailError(e), true); if (!gmailLive()) paintEmails(); return;
-  }
-
-  const h = {};
-  ((full.payload && full.payload.headers) || []).forEach(x => { h[x.name.toLowerCase()] = x.value; });
-  const parts = walkParts(full.payload, { text: '', html: '', files: [] });
-  const bodyText = parts.text || (parts.html ? stripHtml(parts.html) : '') || full.snippet || '';
-
-  // which of these have already been brought in before
-  let already = new Set();
-  try {
-    const res = await db.from('receipts').select('gmail_attachment_id')
-      .eq('gmail_message_id', m.id);
-    if (!res.error) already = new Set((res.data || []).map(r => r.gmail_attachment_id));
-  } catch { /* the check is a courtesy; never block on it */ }
-  busy(false);
-
-  const fact = (label, value) => value
-    ? el('div', { class: 'emfact' }, [el('b', { text: label }), el('span', { text: value })])
-    : null;
-
-  const attachRow = f => {
-    const ok = SUPPORTED_ATTACHMENT.test(f.mimeType);
-    const seen = f.attachmentId && already.has(f.attachmentId);
-    return el('button', { class: 'ematt', onclick: () => ok
-      ? importAttachment(m, full, h, f, !!seen)
-      : toast('Only PDFs and photos can be added to receipts', true) }, [
-      el('span', { class: 'emkind',
-        text: /pdf/i.test(f.mimeType) ? 'PDF' : /^image\//i.test(f.mimeType) ? 'IMG' : '?' }),
-      el('div', { class: 'meta' }, [
-        el('b', { text: f.filename }),
-        el('span', { text: (f.size ? Math.max(1, Math.round(f.size / 1024)) + ' KB' : '')
-                          + (ok ? '' : '  ·  not a PDF or photo') })
-      ]),
-      seen ? el('span', { class: 'emdone', text: 'Imported' }) : null,
-      ok ? el('span', { class: 'chev' }) : null
-    ]);
-  };
-
-  sheet({
-    title: h.subject || '(no subject)',
-    sub: emailWhen(h.date),
-    body: [
-      el('div', { class: 'emfacts' }, [
-        fact('From', h.from),
-        fact('Date', h.date ? prettyDate(emailYmd(h.date)) : null)
-      ].filter(Boolean)),
-      bodyText ? el('div', { class: 'embody', text: bodyText }) : null,
-      el('div', {}, [
-        el('label', { text: parts.files.length
-          ? 'Attachments — tap one to add it to receipts' : 'Attachments' }),
-        parts.files.length
-          ? el('div', { class: 'card' }, parts.files.map(attachRow))
-          : el('p', { class: 'hintline', text: 'This email has no attachments.' })
-      ])
-    ],
-    foot: [ el('button', { class: 'btn btn-ghost btn-full', text: 'Close', onclick: closeSheet }) ]
-  });
-}
-
-/* ---------- attachment → the existing receipt form ---------- */
-async function importAttachment(msg, full, headers, file, alreadyImported) {
-  if (alreadyImported) {
-    const go = await ask('Already imported',
-      `"${file.filename}" from this email has already been added to your receipts. `
-      + 'Add it again anyway?', 'Add anyway');
-    if (!go) return;
-  }
-
-  busy(true, 'Fetching the attachment…');
-  try {
-    let bytes;
-    if (file.data) bytes = decodeB64Url(file.data);
-    else {
-      const att = await gmailFetch('/messages/' + msg.id + '/attachments/' + file.attachmentId);
-      if (!att || !att.data) throw new Error('The attachment could not be downloaded.');
-      bytes = decodeB64Url(att.data);
-    }
-    if (!bytes.length) throw new Error('That attachment came back empty.');
-
-    const blob = new File([bytes], file.filename,
-      { type: /pdf/i.test(file.mimeType) ? 'application/pdf' : file.mimeType });
-
-    // what the receipt form should open with. The date comes from the email;
-    // the total and invoice number are only ever suggestions from the reader,
-    // and VAT is left entirely to the form's own 20% default.
-    emailImport = {
-      messageId: msg.id,
-      attachmentId: file.attachmentId || file.filename,
-      subject: headers.subject || '',
-      from: headers.from || '',
-      date: emailYmd(headers.date)
-    };
-    captureDate = emailImport.date;
-    captureFolder = null;
-
-    busy(false);
-    closeSheet();
-    showEmails(false);
-    await handlePicked(blob);          // the existing receipt pipeline, unchanged
-    if (pending) {
-      // start it off with something useful to call it; still fully editable
-      const desc = $('#f_desc');
-      if (desc && !desc.value.trim()) desc.value = (headers.subject || file.filename).slice(0, 160);
-    }
-  } catch (e) {
-    busy(false);
-    emailImport = null;
-    toast(gmailError(e), true);
-  }
-}
-
-/* Before an imported receipt is filed, look for one that is already there.
-   A matching total on its own is never proof — two real invoices can come to
-   the same penny — so this only ever warns and lets the choice be made. */
-async function duplicateWarning(amt, invoiceNo, dateStr) {
-  if (!emailImport) return true;
-  let rows = [];
-  try {
-    const res = await db.from('receipts').select('*');
-    if (res.error) throw res.error;
-    rows = res.data || [];
-  } catch { return true; }        // never block a save on the check itself
-
-  const sameFile = rows.filter(r =>
-    r.gmail_message_id === emailImport.messageId &&
-    r.gmail_attachment_id === emailImport.attachmentId);
-  const sameInvoice = invoiceNo
-    ? rows.filter(r => r.invoice_no && String(r.invoice_no).toLowerCase() === String(invoiceNo).toLowerCase())
-    : [];
-  const sameTotal = amt !== null && amt !== undefined
-    ? rows.filter(r => Number(r.amount) === Number(amt)) : [];
-
-  if (!sameFile.length && !sameInvoice.length && !sameTotal.length) return true;
-
-  let title, lines;
-  if (sameFile.length) {
-    title = 'Already imported';
-    lines = ['This exact attachment has already been brought in from this email.'];
-  } else if (sameInvoice.length) {
-    title = 'Possible duplicate — same invoice number';
-    lines = ['An existing receipt has invoice number ' + invoiceNo + '.'];
-  } else {
-    title = 'Possible duplicate';
-    lines = ['An existing receipt has the same total: ' + money(amt) + '.'];
-  }
-
-  const match = (sameFile[0] || sameInvoice[0] || sameTotal[0]);
-  if (match) {
-    lines.push('');
-    lines.push([match.description || 'Receipt',
-                prettyDate(String(match.receipt_date)),
-                match.amount != null ? money(match.amount) : null]
-                .filter(Boolean).join('  ·  '));
-    if (sameTotal.length && !sameFile.length && !sameInvoice.length &&
-        String(match.receipt_date) === String(dateStr))
-      lines.push('It is also dated the same day.');
-  }
-  if (!sameFile.length)
-    lines.push('', 'Two different invoices can legitimately come to the same amount, '
-                 + 'so this is only a warning.');
-
-  return await ask(title, lines.join('\n'), 'Add anyway');
-}
-
-/* ============================================================
    MENU DRAWER
    ============================================================ */
 $('#menu').onclick = openMenu;
@@ -3443,7 +2924,7 @@ function openMenu() {
       item('Receipts',
         '<svg viewBox="0 0 24 24"><path d="M4 3h16v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M8 8h8M8 12h5"/></svg>',
         { on: true, tint: true,
-          onclick: () => { close(); showPlanning(false); showSite(false); showEmails(false); } }),
+          onclick: () => { close(); showPlanning(false); showSite(false); } }),
       item('Plans',
         '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>',
         { chev: true, id: 'mplans', onclick: () => { close(); openPlanning(); } })
@@ -3464,11 +2945,7 @@ function openMenu() {
       item('Site Records',
         '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h3l2-2h4l2 2h3a2 2 0 012 2v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>' +
         '<circle cx="12" cy="12" r="3.4"/></svg>',
-        { chev: true, id: 'msite', onclick: () => { close(); openSiteRecords(); } }),
-      item('Emails',
-        '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/>' +
-        '<path d="M3 7l9 6 9-6"/></svg>',
-        { chev: true, id: 'memails', onclick: () => { close(); openEmails(); } })
+        { chev: true, id: 'msite', onclick: () => { close(); openSiteRecords(); } })
     ]),
 
     // Storage and Sign out have moved in here, off the main list
@@ -3515,7 +2992,7 @@ function openSettings() {
         row('Sign out', ICON_SIGNOUT, { danger: true, id: 'setsignout', onclick: async () => {
           if (await ask('Sign out?',
               'You will need your email and password to get back in.', 'Sign out')) {
-            closeSheet(); closeCamera(); showPlanning(false); showSite(false); showEmails(false);
+            closeSheet(); closeCamera(); showPlanning(false); showSite(false);
             await db.auth.signOut();
           }
         } })
@@ -4869,7 +4346,6 @@ function applyRead(target) {
 }
 
 function discardPending() {
-  emailImport = null;
   freeItem(pending);
   if (batch) abandonBatch();
   pending = null;
@@ -4925,11 +4401,6 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
     vatRate = Math.round(vatRate * 100) / 100;
   }
 
-  // An import gets one look for something already on file first. This happens
-  // before the overlay goes up, so the question is answerable.
-  if (emailImport && !await duplicateWarning(amt, (pending.meta && pending.meta.invoice_no) || null,
-                                             dateStr)) return;
-
   if (saving) return;                 // a second tap cannot start a second save
   saving = true;
   save.disabled = true;
@@ -4951,8 +4422,6 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
       net: netAmt,
       vat_rate: vatRate,
       invoice_no: (pending.meta && pending.meta.invoice_no) || null,
-      gmail_message_id: emailImport ? emailImport.messageId : null,
-      gmail_attachment_id: emailImport ? emailImport.attachmentId : null,
       currency: (pending.meta && pending.meta.currency) || 'GBP',
       folder_id: pending.folderId || null,
       file_path: path,
@@ -4984,7 +4453,6 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
   } finally {
     saving = false;
     save.disabled = false;
-    emailImport = null;   // one import, one receipt
     busy(false);          // the receipt is filed and the sheet is closed: always clear
   }
 }
