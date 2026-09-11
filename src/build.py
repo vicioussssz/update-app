@@ -10,10 +10,6 @@ repl = {
     "__ICON512__": (root / "icon512.b64").read_text().strip(),
     "__SB_URL__":  "https://mxncjgxpgsilepojwttb.supabase.co",
     "__SB_KEY__":  "sb_publishable_N53SPrcpCaC8B7HtH30Njg_120kFg5g",
-    # Public by design: an OAuth client id for a browser app is not a secret.
-    # There is no client secret anywhere in this app.
-    "__GOOGLE_CLIENT_ID__": (root / "google-client-id.txt").read_text().strip()
-        if (root / "google-client-id.txt").exists() else "NOT_SET",
 }
 for k, v in repl.items():
     html = html.replace(k, v)
