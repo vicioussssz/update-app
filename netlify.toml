@@ -1,0 +1,10 @@
+# The app is a single self-contained file served straight from the repo root.
+# Nothing to compile, so there is no build step.
+[build]
+  publish = "."
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
