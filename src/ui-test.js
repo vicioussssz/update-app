@@ -918,7 +918,7 @@ async function signIn(page) {
     check('the confirm box no longer calls VAT unknown',
       !/VAT: unknown/i.test(box), JSON.stringify(box.slice(0, 220)));
     check('it says VAT comes from the rate, not from the picture',
-      /not read off the picture/i.test(box), JSON.stringify(box.slice(0, 260)));
+      /never read off the receipt/i.test(box), JSON.stringify(box.slice(0, 260)));
     check('the reader reports only the date and the total',
       !/\bVAT £|\bNet\b|Supplier/i.test(box), JSON.stringify(box.slice(0, 260)));
 
@@ -2707,14 +2707,23 @@ async function signIn(page) {
       await page.fill('#f_desc', 'Repeat run ' + i);
       await page.fill('#f_amt', '60');
       await page.dispatchEvent('#f_amt', 'input');
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(900);
+      // nothing to do with Gmail: a total typed in by hand gets the same check
+      if (i > 1) check(`run ${i} of 3: a hand-typed total is checked too`,
+        await page.isVisible('#f_dup') &&
+        /same total as an existing receipt/i.test(await page.textContent('#f_dup')),
+        (await page.textContent('#f_dup').catch(() => 'no panel')).slice(0, 140));
       await page.click('.sfoot .btn-primary');
-      await page.waitForTimeout(2200);
+      await page.waitForTimeout(1000);
+      // runs 2 and 3 are £60 again, so the possible-duplicate warning is expected:
+      // three £60 receipts on the same day are still three receipts
+      const warned = await page.evaluate(() => !!document.querySelector('#askhost'));
+      if (i > 1) check(`run ${i} of 3: a repeated total is queried, not refused`,
+        warned && /possible duplicate/i.test(await page.textContent('#askhost')),
+        warned ? (await page.textContent('#askhost')).slice(0, 120) : 'no warning');
+      if (warned) { await page.click('#askhost .btn-danger'); await page.waitForTimeout(800); }
+      await page.waitForTimeout(1800);
       const stuck = await busyUp();
-      if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
-        await page.click('#askhost .btn-ghost');
-        await page.waitForTimeout(700);
-      }
       check(`run ${i} of 3: saves and clears the saving screen`,
         !stuck && await page.evaluate(n =>
           window.__mock.rows.some(r => r.description === 'Repeat run ' + n), i),
@@ -3488,6 +3497,578 @@ async function signIn(page) {
     await ctx.close();
   }
 
+
+  /* ====== PHASE 26 — Gmail import ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+
+    // Google's sign-in library is never loaded in the test; the token client is
+    // stubbed so the flow can be exercised without a real Google account.
+    await ctx.route('**/accounts.google.com/gsi/client', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stub */' }));
+
+    const B64 = PIXEL.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const msg = (id, from, subject, date, parts) => ({
+      id, snippet: 'Please find attached.',
+      payload: {
+        mimeType: 'multipart/mixed',
+        headers: [{ name: 'From', value: from }, { name: 'Subject', value: subject },
+                  { name: 'Date', value: date }],
+        parts
+      }
+    });
+    const textPart = t => ({ mimeType: 'text/plain', body: { data:
+      Buffer.from(t).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') } });
+    const filePart = (name, mime, aid) =>
+      ({ mimeType: mime, filename: name, body: { attachmentId: aid, size: 2048 } });
+
+    const MESSAGES = {
+      m1: msg('m1', '"Travis Perkins" <invoices@travisperkins.co.uk>',
+              'Invoice INV-9001', 'Tue, 8 Sep 2026 09:14:00 +0100',
+              [textPart('Your invoice is attached.\nTotal due £1,245.60'),
+               filePart('invoice-9001.pdf', 'application/pdf', 'att-1'),
+               filePart('terms.docx',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'att-2')]),
+      m2: msg('m2', 'Jewson <no-reply@jewson.co.uk>', 'Statement September',
+              'Mon, 7 Sep 2026 16:02:00 +0100',
+              [textPart('Statement attached.'),
+               filePart('statement.png', 'image/png', 'att-3')]),
+      m3: msg('m3', 'Someone <hi@example.com>', 'Just a note',
+              'Sun, 6 Sep 2026 11:00:00 +0100', [textPart('No attachment on this one.')]),
+      // never imported, so the invoice-number check is what gets tested below
+      m4: msg('m4', 'Travis Perkins <invoices@travisperkins.co.uk>', 'Credit note',
+              'Fri, 4 Sep 2026 10:00:00 +0100',
+              [textPart('Credit note attached.'),
+               filePart('credit-note.pdf', 'application/pdf', 'att-4')])
+    };
+
+    let gmailDown = false;
+    await ctx.route('**/gmail.googleapis.com/**', route => {
+      const url = route.request().url();
+      if (gmailDown) return route.fulfill({ status: 401, contentType: 'application/json',
+        body: JSON.stringify({ error: { message: 'Invalid Credentials' } }) });
+      const json = o => route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(o) });
+      if (/\/profile/.test(url)) return json({ emailAddress: 'finn@example.com' });
+      if (/\/attachments\//.test(url)) return json({ data: B64, size: PIXEL.length });
+      const m = url.match(/\/messages\/(m\d)/);
+      if (m) return json(MESSAGES[m[1]]);
+      if (/\/messages\?/.test(url))
+        return json({ messages: [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }, { id: 'm4' }] });
+      return json({});
+    });
+
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      window.__gsi = { granted: true, revoked: [] };
+      window.google = { accounts: { oauth2: {
+        initTokenClient: cfg => ({
+          requestAccessToken: () => setTimeout(() => {
+            window.__gsi.scope = cfg.scope;
+            if (window.__gsi.granted) cfg.callback({ access_token: 'tok-123', expires_in: 3600 });
+            else cfg.error_callback({ type: 'popup_closed' });
+          }, 40)
+        }),
+        revoke: (t, cb) => { window.__gsi.revoked.push(t); cb && cb(); }
+      } } };
+
+      /* pdf.js stands in for the real library, which cannot be fetched in here.
+         Only the four calls the app actually makes are provided, so the stub
+         cannot quietly drift away from what the app relies on:
+           getDocument({data}).promise -> { numPages, getPage }
+           page.getViewport({scale})   -> { width, height }
+           page.render({canvasContext, viewport}).promise
+           page.getTextContent()       -> { items: [{ str, hasEOL }] }  */
+      window.__pdf = {
+        pages: 3,
+        text: 'TRAVIS PERKINS LTD\nInvoice No INV-9001\nVAT registration 123 4567 89\n'
+            + 'Goods 1038.00\nVAT at 20% 207.60\nTotal due £1,245.60',
+        rendered: []
+      };
+      window.pdfjsLib = {
+        GlobalWorkerOptions: {},
+        getDocument: opts => ({ promise: Promise.resolve({
+          numPages: window.__pdf.pages,
+          getPage: n => Promise.resolve({
+            getViewport: ({ scale }) => ({ width: 595 * scale, height: 842 * scale }),
+            render: ({ canvasContext, viewport }) => ({ promise: (async () => {
+              canvasContext.fillStyle = '#fff';
+              canvasContext.fillRect(0, 0, viewport.width, viewport.height);
+              canvasContext.fillStyle = '#000';
+              canvasContext.font = 'bold 48px sans-serif';
+              canvasContext.fillText('PAGE ' + n, 40, 90);
+              window.__pdf.rendered.push({ page: n, w: viewport.width, h: viewport.height });
+            })() }),
+            getTextContent: () => Promise.resolve({ items:
+              (n === 1 ? window.__pdf.text : 'continued').split('\n')
+                .flatMap(line => {
+                  const words = line.split(' ');
+                  return words.map((w, i) => ({ str: w, hasEOL: i === words.length - 1,
+                                                transform: [1, 0, 0, 1, 0, 800 - n] }));
+                })
+            })
+          })
+        }) })
+      };
+    });
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    const receiptsBefore = await page.evaluate(() => window.__mock.rows.length);
+
+    /* ---------- the section ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(900);
+    check('Emails opens as its own page',
+      await page.isVisible('#emails') && !(await page.isVisible('#app')),
+      'emails visible: ' + await page.isVisible('#emails'));
+    check('it starts disconnected, with a Connect Gmail button',
+      await page.isVisible('#gmconnect') &&
+      /not connected/i.test(await page.textContent('#gmbar')),
+      await page.textContent('#gmbar'));
+    check('it says the access is read-only before you connect',
+      /cannot send, change or delete/i.test(await page.textContent('#emlist')),
+      (await page.textContent('#emlist')).slice(0, 160));
+
+    /* ---------- connecting ---------- */
+    await page.click('#gmconnect');
+    await page.waitForTimeout(3000);
+    check('only read-only Gmail permission is asked for',
+      await page.evaluate(() => window.__gsi.scope)
+        === 'https://www.googleapis.com/auth/gmail.readonly',
+      await page.evaluate(() => window.__gsi.scope));
+    check('the connected account is shown',
+      /finn@example\.com/.test(await page.textContent('#gmbar')),
+      await page.textContent('#gmbar'));
+    check('Connect becomes Disconnect', await page.isVisible('#gmdisconnect'), 'no disconnect');
+    check('the email list loads',
+      (await page.$$('#emlist .emrow')).length === 4, (await page.$$('#emlist .emrow')).length);
+    const listTxt = await page.textContent('#emlist');
+    check('each row shows sender, subject and date',
+      /Travis Perkins/.test(listTxt) && /Invoice INV-9001/.test(listTxt) && /8 Sep/.test(listTxt),
+      listTxt.slice(0, 300));
+    check('emails with an attachment are marked',
+      (await page.$$('#emlist .emclip')).length === 3, (await page.$$('#emlist .emclip')).length);
+    check('no token is written to storage',
+      await page.evaluate(() => {
+        try { return !JSON.stringify(localStorage).includes('tok-123'); } catch { return true; }
+      }), 'the access token was persisted');
+    await page.screenshot({ path: `${ROOT}/n37-emails.png` });
+
+    /* ---------- opening one ---------- */
+    await page.click('.emrow:has-text("Invoice INV-9001")');
+    await page.waitForTimeout(1400);
+    const openTxt = await page.textContent('.sbody');
+    check('the email shows sender, date, message and attachments',
+      /travisperkins/.test(openTxt) && /September/.test(openTxt) &&
+      /Total due/.test(openTxt) && /invoice-9001\.pdf/.test(openTxt), openTxt.slice(0, 300));
+    check('both attachments are listed',
+      (await page.$$('.ematt')).length === 2, (await page.$$('.ematt')).length);
+
+    const pdfRow = '.ematt:has-text("invoice-9001.pdf")';
+    const pngRow = '.ematt:has-text("statement.png")';
+    const docRow = '.ematt:has-text("terms.docx")';
+    const pdfRowTxt = await page.textContent(pdfRow);
+    check('each attachment shows its name, type and size',
+      /invoice-9001\.pdf/.test(pdfRowTxt) && /PDF/.test(pdfRowTxt) && /2 KB/.test(pdfRowTxt),
+      pdfRowTxt);
+    check('a supported attachment offers both View and Add to Receipts',
+      await page.isVisible(`${pdfRow} .emview`) && await page.isVisible(`${pdfRow} .emadd`),
+      pdfRowTxt);
+    check('an unsupported attachment is listed but offers neither',
+      /cannot be opened here/.test(await page.textContent(docRow)) &&
+      (await page.$$(`${docRow} .emview`)).length === 0 &&
+      (await page.$$(`${docRow} .emadd`)).length === 0,
+      await page.textContent(docRow));
+    await page.screenshot({ path: `${ROOT}/n38-email.png` });
+
+    /* ---------- looking at the PDF before deciding anything ---------- */
+    await page.click(`${pdfRow} .emview`);
+    await page.waitForTimeout(2500);
+    check('View opens the PDF inside the app',
+      await page.isVisible('#aviewer') && await page.isVisible('#avcanvas'),
+      'viewer: ' + await page.isVisible('#aviewer'));
+    check('the PDF is actually drawn, not just named',
+      await page.evaluate(() => {
+        const c = document.querySelector('#avcanvas');
+        if (!c) return false;
+        const d = c.getContext('2d').getImageData(0, 0, c.width, Math.min(140, c.height)).data;
+        let ink = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] < 100) ink++;
+        return c.width > 300 && ink > 200;          // white page with black text on it
+      }), 'nothing was painted on the canvas');
+    check('it is rendered well above screen size so zooming shows real detail',
+      await page.evaluate(() => {
+        const c = document.querySelector('#avcanvas');
+        return c && c.width >= (document.querySelector('#vbody').clientWidth || 0) * 1.8;
+      }), await page.evaluate(() => document.querySelector('#avcanvas').width));
+    check('page controls say where you are',
+      /Page 1 of 3/.test(await page.textContent('#avpage')), await page.textContent('#avpage'));
+    check('and back is disabled on the first page',
+      await page.isDisabled('#avprev') && !(await page.isDisabled('#avnext')), 'nav wrong');
+
+    await page.click('#avnext');
+    await page.waitForTimeout(900);
+    check('next moves to page 2',
+      /Page 2 of 3/.test(await page.textContent('#avpage')) &&
+      await page.evaluate(() => window.__pdf.rendered.some(r => r.page === 2)),
+      await page.textContent('#avpage'));
+    await page.click('#avnext');
+    await page.waitForTimeout(900);
+    check('and the last page disables next',
+      /Page 3 of 3/.test(await page.textContent('#avpage')) && await page.isDisabled('#avnext'),
+      await page.textContent('#avpage'));
+    await page.click('#avprev');
+    await page.waitForTimeout(900);
+    check('previous goes back again',
+      /Page 2 of 3/.test(await page.textContent('#avpage')), await page.textContent('#avpage'));
+    await page.screenshot({ path: `${ROOT}/n40-viewer.png` });
+
+    const scaleOf = sel => page.evaluate(s => {
+      const t = getComputedStyle(document.querySelector(s)).transform;
+      if (!t || t === 'none') return 1;
+      return Number(t.match(/matrix\(([-\d.]+)/)[1]);
+    }, sel);
+    check('zooming in magnifies the page', await (async () => {
+      const before = await scaleOf('#avcanvas');
+      await page.click('#avzoomin');
+      await page.waitForTimeout(400);
+      return (await scaleOf('#avcanvas')) > before + 0.3;
+    })(), await scaleOf('#avcanvas'));
+    check('a zoomed page can be panned', await (async () => {
+      const box = await page.locator('#vbody').boundingBox();
+      const before = await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#avcanvas')).transform);
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await page.evaluate(() => {
+        const b = document.querySelector('#vbody');
+        const t = (x, y) => [new Touch({ identifier: 1, target: b, clientX: x, clientY: y })];
+        const fire = (type, list, changed) => b.dispatchEvent(new TouchEvent(type,
+          { touches: list, targetTouches: list, changedTouches: changed,
+            bubbles: true, cancelable: true }));
+        fire('touchstart', t(200, 400), t(200, 400));
+        fire('touchmove',  t(120, 330), t(120, 330));
+        fire('touchend',   [],          t(120, 330));
+      });
+      await page.waitForTimeout(400);
+      const after = await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#avcanvas')).transform);
+      return after !== before;
+    })(), 'panning moved nothing');
+    check('zooming out again works too', await (async () => {
+      const before = await scaleOf('#avcanvas');
+      await page.click('#avzoomout');
+      await page.waitForTimeout(400);
+      return (await scaleOf('#avcanvas')) < before - 0.2;
+    })(), await scaleOf('#avcanvas'));
+
+    /* ---------- and adding it from where you are looking at it ---------- */
+    await page.click('#avadd');
+    await page.waitForTimeout(3200);
+    check('Add to Receipts in the viewer closes it and hands over to the form',
+      !(await page.isVisible('#aviewer')) && await page.isVisible('#f_amt'),
+      'viewer still up: ' + await page.isVisible('#aviewer'));
+    check('the total is read out of the PDF text',
+      (await page.inputValue('#f_amt')) === '1245.60', await page.inputValue('#f_amt'));
+    check('the invoice number is read out of it too',
+      await page.evaluate(() => pending && pending.meta && pending.meta.invoice_no) === 'INV-9001',
+      JSON.stringify(await page.evaluate(() => pending && pending.meta)));
+    check('but the VAT rate is not — it stays the 20% default',
+      (await page.inputValue('#f_rate')) === '20' &&
+      /never read off the receipt/i.test(await page.textContent('.readbox')),
+      await page.inputValue('#f_rate') + ' / ' + await page.textContent('.readbox'));
+    check('VAT and net follow from that rate, not from the document',
+      (await page.inputValue('#f_vat')) === '207.60' &&
+      (await page.inputValue('#f_net')) === '1038.00',
+      await page.inputValue('#f_vat') + ' / ' + await page.inputValue('#f_net'));
+    check('the attachment only downloaded once for the view and the import',
+      await page.evaluate(() => attachBytes.size) === 1,
+      await page.evaluate(() => attachBytes.size));
+    await page.evaluate(() => discardPending());
+    await page.waitForTimeout(600);
+
+    /* ---------- straight in, without looking first ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(1200);
+    await page.click('.emrow:has-text("Invoice INV-9001")');
+    await page.waitForTimeout(1500);
+    await page.click(`${pdfRow} .emadd`);
+    await page.waitForTimeout(3200);
+    check('it hands over to the existing receipt form',
+      (await page.textContent('.shead h3')) === 'New receipt' &&
+      await page.isVisible('#f_amt') && await page.isVisible('#f_vat') &&
+      await page.isVisible('#f_rate') && await page.isVisible('#f_net') &&
+      await page.isVisible('#f_date') && await page.isVisible('#f_folderpick'),
+      await page.textContent('.shead h3').catch(() => 'none'));
+    check('the date comes from the email',
+      (await page.inputValue('#f_date')) === '2026-09-08', await page.inputValue('#f_date'));
+    check('VAT defaults to 20% and nothing was scanned for a rate',
+      (await page.inputValue('#f_rate')) === '20', await page.inputValue('#f_rate'));
+    check('the description is started off from the subject',
+      /INV-9001/.test(await page.inputValue('#f_desc')), await page.inputValue('#f_desc'));
+    check('the app still knows which attachment this came from',
+      await page.evaluate(() => emailImport && emailImport.messageId === 'm1'
+                             && emailImport.attachmentId === 'att-1'),
+      JSON.stringify(await page.evaluate(() => emailImport)));
+
+    await page.fill('#f_amt', '1245.60');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    check('the 20% VAT calculation is the existing one',
+      (await page.inputValue('#f_vat')) === '207.60' &&
+      (await page.inputValue('#f_net')) === '1038.00',
+      await page.inputValue('#f_vat') + ' / ' + await page.inputValue('#f_net'));
+    await page.fill('#f_rate', '5');
+    await page.dispatchEvent('#f_rate', 'input');
+    await page.waitForTimeout(300);
+    check('the VAT rate is still mine to change',
+      (await page.inputValue('#f_vat')) === '59.31', await page.inputValue('#f_vat'));
+    await page.fill('#f_rate', '20');
+    await page.dispatchEvent('#f_rate', 'input');
+    await page.waitForTimeout(300);
+
+    await page.evaluate(() => { pending.meta = { invoice_no: 'INV-9001', currency: 'GBP' }; });
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    const saved = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.gmail_message_id === 'm1'));
+    check('the receipt is filed through the normal save',
+      saved && saved.amount === 1245.6 && saved.vat === 207.6 && saved.receipt_date === '2026-09-08',
+      JSON.stringify(saved && { a: saved.amount, v: saved.vat, d: saved.receipt_date }));
+    check('which attachment it came from is recorded',
+      saved && saved.gmail_message_id === 'm1' && saved.gmail_attachment_id === 'att-1',
+      JSON.stringify(saved && saved.gmail_attachment_id));
+    check('exactly one receipt was added',
+      await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 1,
+      await page.evaluate(() => window.__mock.rows.length));
+    check('the import is finished with, so the next receipt is a normal one',
+      await page.evaluate(() => emailImport === null), 'import state left behind');
+
+    /* ---------- the same attachment again ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(1200);
+    await page.click('.emrow:has-text("Invoice INV-9001")');
+    await page.waitForTimeout(1600);
+    check('an attachment already brought in is marked in the list',
+      /Imported/.test(await page.textContent('.ematt:has-text("invoice-9001.pdf")')),
+      await page.textContent('.ematt:has-text("invoice-9001.pdf")'));
+    await page.click('.ematt:has-text("invoice-9001.pdf") .emadd');
+    await page.waitForTimeout(900);
+    check('re-importing warns that it has been imported before',
+      /already been added/i.test(await page.textContent('#askhost')),
+      (await page.textContent('#askhost')).slice(0, 200));
+    check('and the warning can be declined',
+      await (async () => {
+        await page.click('#askhost .btn-ghost');
+        await page.waitForTimeout(900);
+        return await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 1;
+      })(), 'it imported anyway');
+
+    /* ---------- a different invoice, same total to the penny ---------- */
+    await page.click('.sfoot .btn-ghost');       // close the email
+    await page.waitForTimeout(600);
+    await page.click('.emrow:has-text("Statement September")');
+    await page.waitForTimeout(1400);
+    await page.click('.ematt:has-text("statement.png") .emview');
+    await page.waitForTimeout(2200);
+    check('an image attachment opens in the viewer too',
+      await page.isVisible('#aviewer') && await page.isVisible('#avimg'),
+      'image viewer: ' + await page.isVisible('#aviewer'));
+    check('an image gets no page controls, but keeps its zoom controls',
+      await page.isVisible('#avzoomin') && !(await page.isVisible('#avpage')),
+      'controls wrong');
+    check('the image zooms', await (async () => {
+      const before = await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#avimg')).transform);
+      await page.click('#avzoomin');
+      await page.waitForTimeout(400);
+      const after = await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#avimg')).transform);
+      return after !== before && /matrix/.test(after);
+    })(), 'image did not zoom');
+    await page.click('#avclose');
+    await page.waitForTimeout(600);
+    check('closing the viewer goes back to the email, not out of the app',
+      !(await page.isVisible('#aviewer')) &&
+      /statement\.png/.test(await page.textContent('.sbody')),
+      'did not return to the email');
+
+    await page.click('.ematt:has-text("statement.png") .emadd');
+    await page.waitForTimeout(3200);
+    await page.fill('#f_desc', 'Jewson statement');
+    await page.fill('#f_amt', '1245.60');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(900);
+    check('a matching total warns while you type it, not only when you save',
+      await page.isVisible('#f_dup') &&
+      /possible duplicate/i.test(await page.textContent('#f_dup')) &&
+      /same total as an existing receipt/i.test(await page.textContent('#f_dup')),
+      (await page.textContent('#f_dup').catch(() => 'no panel')).slice(0, 200));
+    check('the warning shows the receipt it found: date, folder and total',
+      /£1,?245\.60/.test(await page.textContent('#f_dup')) &&
+      /8 Sep|Sept/.test(await page.textContent('#f_dup')) &&
+      /Unfiled|folder/i.test(await page.textContent('#f_dup')),
+      (await page.textContent('#f_dup')).slice(0, 260));
+    check('with a way to go and look at it', await page.isVisible('#f_dup .dupopen'),
+      'no way to inspect the match');
+    check('it says a matching price is not proof of a duplicate',
+      /only a warning/i.test(await page.textContent('#f_dup')),
+      (await page.textContent('#f_dup')).slice(0, 300));
+    await page.evaluate(() => document.querySelector('#f_dup')
+      .scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: `${ROOT}/n39-duplicate.png` });
+
+    await page.fill('#f_amt', '1510.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(900);
+    check('changing the total to one nothing matches clears the warning',
+      !(await page.isVisible('#f_dup')), await page.textContent('#f_dup').catch(() => ''));
+    await page.fill('#f_amt', '1245.60');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(900);
+    check('and putting the matching total back brings it straight back',
+      await page.isVisible('#f_dup'), 'warning did not return');
+
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(1200);
+    const dupTxt = await page.textContent('#askhost').catch(() => '');
+    check('a matching total to the penny raises a possible-duplicate warning',
+      /possible duplicate/i.test(dupTxt) && /£1245\.60|£1,245\.60/.test(dupTxt),
+      dupTxt.slice(0, 240));
+    check('it says a matching amount is only a warning, not proof',
+      /only a warning/i.test(dupTxt), dupTxt.slice(0, 300));
+    check('cancelling leaves the receipt unsaved and the form still there',
+      await (async () => {
+        await page.click('#askhost .btn-ghost');
+        await page.waitForTimeout(900);
+        return await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 1 &&
+               await page.isVisible('#f_amt') &&
+               await page.evaluate(() => document.querySelector('#busy').classList.contains('hide'));
+      })(), 'cancel did not leave things as they were');
+
+    check('and Add anyway lets a genuine second invoice through',
+      await (async () => {
+        await page.click('.sfoot .btn-primary');
+        await page.waitForTimeout(1100);
+        await page.click('#askhost .btn-danger');
+        await page.waitForTimeout(2600);
+        return await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 2;
+      })(), 'Add anyway did not save');
+
+    /* ---------- same invoice number ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(1200);
+    await page.click('.emrow:has-text("Credit note")');
+    await page.waitForTimeout(1400);
+    await page.click('.ematt:has-text("credit-note.pdf") .emadd');
+    await page.waitForTimeout(3200);
+    await page.fill('#f_desc', 'Another one');
+    await page.fill('#f_amt', '77.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { pending.meta = { invoice_no: 'INV-9001' }; });
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(1300);
+    const invTxt = await page.textContent('#askhost').catch(() => '');
+    check('a matching invoice number gives the stronger warning',
+      /same invoice number/i.test(invTxt) && /INV-9001/.test(invTxt), invTxt.slice(0, 240));
+    await page.click('#askhost .btn-ghost');
+    await page.waitForTimeout(800);
+    await page.evaluate(() => discardPending());
+    await page.waitForTimeout(500);
+
+    /* ---------- emails stay out of everything ---------- */
+    await page.evaluate(() => { closeSheet(); showEmails(false); });
+    await page.waitForTimeout(700);
+    check('no email became a receipt on its own',
+      await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 2,
+      await page.evaluate(() => window.__mock.rows.length));
+    check('nothing about emails is stored in the database',
+      await page.evaluate(() => !window.__mock.rows.some(r => /Just a note|Statement September/
+        .test(r.description || '') && !r.gmail_message_id)), 'an email was stored');
+    check('Planning and Site Records are untouched',
+      await page.evaluate(() => window.__mock.plans.length === 0
+                             && window.__mock.site_records.length === 0), 'other sections touched');
+
+    /* ---------- a connection that lapses ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(900);
+    await page.evaluate(() => { window.__gsi.granted = true; });
+    gmailDown = true;
+    await page.click('#emrefresh');
+    await page.waitForTimeout(2500);
+    check('an expired connection says so instead of hanging',
+      /expired or been withdrawn/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+    check('and it never leaves the screen stuck on loading',
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')),
+      'stuck on loading');
+    check('it drops back to asking you to connect again',
+      await page.isVisible('#gmconnect'), 'still shows as connected');
+    gmailDown = false;
+
+    /* ---------- a sign-in that is dismissed ---------- */
+    await page.evaluate(() => { window.__gsi.granted = false; });
+    await page.click('#gmconnect');
+    await page.waitForTimeout(2500);
+    check('closing the Google window is handled, not left spinning',
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')) &&
+      /not connected/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+
+    /* ---------- disconnecting ---------- */
+    await page.evaluate(() => { window.__gsi.granted = true; });
+    await page.click('#gmconnect');
+    await page.waitForTimeout(3000);
+    check('it can be reconnected', await page.isVisible('#gmdisconnect'), 'not reconnected');
+    await page.click('#gmdisconnect');
+    await page.waitForTimeout(900);
+    check('disconnecting hands the token back to Google',
+      await page.evaluate(() => window.__gsi.revoked.includes('tok-123')),
+      JSON.stringify(await page.evaluate(() => window.__gsi.revoked)));
+    check('and the account and its mail are cleared from the screen',
+      await page.isVisible('#gmconnect') &&
+      !/finn@example\.com/.test(await page.textContent('#gmbar')) &&
+      (await page.$$('#emlist .emrow')).length === 0,
+      await page.textContent('#gmbar'));
+
+    /* ---------- the rest of the app is where it was ---------- */
+    await page.click('#emback');
+    await page.waitForTimeout(700);
+    check('back returns to receipts',
+      await page.isVisible('#app') && !(await page.isVisible('#emails')), 'did not go back');
+    check('the receipt calendar still works',
+      (await page.$$('#grid .cell')).length > 27 &&
+      (await page.textContent('#ttotal')).startsWith('£'), await page.textContent('#ttotal'));
+
+    check('no JS errors through the Gmail flow', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
 
   console.log('\n=== PASS (' + pass.length + ') ===');
   pass.forEach(p => console.log('  ✓ ' + p));

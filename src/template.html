@@ -667,19 +667,59 @@ main{flex:1;padding:16px 12px 0}
 .embody{font-size:14.5px;line-height:1.5;white-space:pre-wrap;color:var(--muted);
   max-height:210px;overflow-y:auto;background:var(--surface-2);border-radius:10px;
   padding:12px 13px}
+/* An attachment is a row you can read at a glance and two plain choices:
+   look at it first, or send it straight into the receipt form. */
 .ematt{display:flex;align-items:center;gap:11px;padding:11px 12px;width:100%;
-  text-align:left;position:relative;min-height:58px}
+  text-align:left;position:relative;min-height:58px;flex-wrap:wrap}
 .ematt + .ematt::before{content:"";position:absolute;top:0;left:12px;right:12px;height:1px;
   background:var(--line);transform:scaleY(.5)}
-.ematt:active{background:var(--surface-2)}
 .emkind{width:38px;height:38px;border-radius:9px;flex:none;display:grid;place-items:center;
   background:var(--surface-2);font-size:10px;font-weight:700;color:var(--faint)}
+.emkind.pdf{background:rgba(255,69,58,.16);color:#ff6961}
+.emkind.img{background:rgba(10,132,255,.16);color:#5ea9ff}
 .ematt .meta{flex:1;min-width:0}
 .ematt .meta b{display:block;font-size:14.5px;font-weight:500;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ematt .meta span{display:block;font-size:12px;color:var(--muted)}
 .emdone{font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
   color:#ffa62b;background:rgba(255,159,10,.16);border-radius:20px;padding:3px 8px;flex:none}
+.emacts{display:flex;gap:8px;width:100%;margin-top:2px}
+.emacts button{flex:1;padding:9px 10px;border-radius:9px;font-size:14px;font-weight:600}
+.emview{background:var(--surface-2);color:var(--text)}
+.emadd{background:var(--accent);color:#fff}
+.emacts button:active{opacity:.7}
+
+/* the attachment viewer: the document fills the screen, the controls sit over it */
+.viewer .vfoot{display:flex;align-items:center;gap:8px;
+  padding:8px 10px calc(var(--sab) + 10px);background:rgba(0,0,0,.72);
+  position:relative;z-index:3}
+.viewer .vfoot .btn{flex:1;min-height:44px}
+.vpages{display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:6px 10px;background:rgba(0,0,0,.72);position:relative;z-index:3}
+.vpages .icb{background:rgba(255,255,255,.12);color:#fff;width:38px;height:38px}
+.vpages .icb[disabled]{opacity:.32}
+.vpages b{font-size:13.5px;font-weight:600;color:#fff;min-width:82px;text-align:center;
+  font-variant-numeric:tabular-nums}
+.vzoom{display:flex;gap:6px}
+.vzoom .icb{background:rgba(255,255,255,.12);color:#fff;width:38px;height:38px;
+  font-size:19px;font-weight:600;line-height:1}
+.viewer canvas{max-width:100%;max-height:100%;object-fit:contain;
+  will-change:transform;transform-origin:center center}
+.vmsg{color:#fff;font-size:14.5px;text-align:center;padding:24px;line-height:1.5;opacity:.85}
+
+/* the possible-duplicate panel that lives under the total on the receipt form */
+.dupbox{display:flex;gap:11px;align-items:flex-start;padding:11px 12px;border-radius:11px;
+  background:rgba(255,159,10,.12);box-shadow:inset 0 0 0 1.5px rgba(255,159,10,.35)}
+.dupbox.hide{display:none}
+.dupbox .dupimg{width:46px;height:58px;flex:none;border-radius:7px;object-fit:cover;
+  background:var(--surface-2)}
+.dupbox .dupfile{width:46px;height:58px;flex:none;border-radius:7px;display:grid;
+  place-items:center;background:var(--surface-2);font-size:10px;font-weight:700;color:var(--faint)}
+.dupbox .dupmeta{flex:1;min-width:0}
+.dupbox .dupmeta b{display:block;font-size:13.5px;font-weight:700;color:#ffa62b;
+  margin-bottom:3px}
+.dupbox .dupmeta span{display:block;font-size:13px;color:var(--muted);line-height:1.45}
+.dupbox .dupmeta button{margin-top:6px;font-size:13.5px;font-weight:600;color:var(--accent)}
 
 /* the status picker on the form */
 .statuses{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -1149,6 +1189,7 @@ function monthRange(d) {
 }
 
 async function loadMonth() {
+  forgetDupIndex();          // receipts have changed; the duplicate list is stale
   const [from, to] = monthRange(view);
   $('#mlabel').textContent = `${MONTHS[view.getMonth()]} ${view.getFullYear()}`;
   renderGrid();                                   // paint the empty shell immediately
@@ -3068,6 +3109,7 @@ async function connectGmail() {
 function disconnectGmail() {
   const tok = gmailToken && gmailToken.access_token;
   gmailToken = null; gmailAddress = null; emailList = [];
+  attachBytes.clear();                       // nothing of the mailbox is kept behind
   // hand the token back so it stops working immediately, rather than just
   // forgetting it on this device
   try { if (tok && window.google) google.accounts.oauth2.revoke(tok, () => {}); } catch { /* already gone */ }
@@ -3232,7 +3274,67 @@ const stripHtml = h => String(h)
   .replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
   .replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 
-const SUPPORTED_ATTACHMENT = /^(application\/pdf|image\/(jpeg|jpg|png|heic|heif|webp))$/i;
+/* What the app can actually open and file: a PDF, or a photograph of one.
+   Anything else is still listed — you can see it is there — but it has no
+   buttons, because neither viewing nor filing it would work. */
+const SUPPORTED_ATTACHMENT = /^(application\/pdf|image\/(jpeg|jpg|png|heic|heif|webp|gif|bmp|tiff))$/i;
+
+/* Gmail sometimes labels an attachment application/octet-stream. The file name
+   is the better witness, so both get a say. */
+function attachKind(file) {
+  const mime = String(file.mimeType || '').toLowerCase();
+  const name = String(file.filename || '');
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [, ''])[1].toLowerCase();
+  const isPdf = /pdf/.test(mime) || ext === 'pdf';
+  const isImage = /^image\//.test(mime) ||
+    ['jpg', 'jpeg', 'png', 'heic', 'heif', 'webp', 'gif', 'bmp', 'tif', 'tiff'].includes(ext);
+  const label = isPdf ? 'PDF'
+    : isImage ? (ext ? ext.toUpperCase().replace(/^JPEG$/, 'JPG') : 'Image')
+    : (ext ? ext.toUpperCase() : 'File');
+  return {
+    isPdf, isImage,
+    ok: isPdf || (isImage && SUPPORTED_ATTACHMENT.test(mime || ('image/' + ext))),
+    label,
+    type: isPdf ? 'application/pdf'
+        : isImage ? (/^image\//.test(mime) ? mime : 'image/' + (ext === 'jpg' ? 'jpeg' : ext))
+        : (mime || 'application/octet-stream')
+  };
+}
+
+const fileSizeText = n => !n ? ''
+  : n < 1024 ? n + ' B'
+  : n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' KB'
+  : (n / 1024 / 1024).toFixed(1) + ' MB';
+
+/* The bytes themselves, not just the name. Fetched once per attachment and kept
+   for as long as the email is open, so looking at an invoice and then filing it
+   does not download it twice. */
+const attachBytes = new Map();
+const MAX_ATTACHMENT = 30 * 1024 * 1024;
+const KEEP_ATTACHMENTS = 3;        // a handful of invoices, not a session's worth
+
+async function fetchAttachment(msg, file) {
+  const key = msg.id + '/' + (file.attachmentId || file.filename);
+  if (attachBytes.has(key)) return attachBytes.get(key);
+
+  if (file.size && file.size > MAX_ATTACHMENT)
+    throw new Error('That attachment is ' + fileSizeText(file.size)
+                  + ', which is too big to open on a phone.');
+
+  let bytes;
+  if (file.data) bytes = decodeB64Url(file.data);
+  else {
+    if (!file.attachmentId) throw new Error('That attachment is no longer available on this email.');
+    const att = await gmailFetch('/messages/' + msg.id + '/attachments/' + file.attachmentId);
+    if (!att || !att.data) throw new Error('The attachment could not be downloaded.');
+    bytes = decodeB64Url(att.data);
+  }
+  if (!bytes.length) throw new Error('That attachment came back empty.');
+  attachBytes.set(key, bytes);
+  while (attachBytes.size > KEEP_ATTACHMENTS)
+    attachBytes.delete(attachBytes.keys().next().value);
+  return bytes;
+}
 
 async function openEmail(m) {
   busy(true, 'Opening…');
@@ -3262,20 +3364,25 @@ async function openEmail(m) {
     : null;
 
   const attachRow = f => {
-    const ok = SUPPORTED_ATTACHMENT.test(f.mimeType);
+    const k = attachKind(f);
     const seen = f.attachmentId && already.has(f.attachmentId);
-    return el('button', { class: 'ematt', onclick: () => ok
-      ? importAttachment(m, full, h, f, !!seen)
-      : toast('Only PDFs and photos can be added to receipts', true) }, [
-      el('span', { class: 'emkind',
-        text: /pdf/i.test(f.mimeType) ? 'PDF' : /^image\//i.test(f.mimeType) ? 'IMG' : '?' }),
+    const bits = [k.label, fileSizeText(f.size)].filter(Boolean);
+    if (!k.ok) bits.push('cannot be opened here');
+
+    return el('div', { class: 'ematt' }, [
+      el('span', { class: 'emkind' + (k.isPdf ? ' pdf' : k.isImage ? ' img' : ''),
+                   text: k.isPdf ? 'PDF' : k.isImage ? 'IMG' : '?' }),
       el('div', { class: 'meta' }, [
-        el('b', { text: f.filename }),
-        el('span', { text: (f.size ? Math.max(1, Math.round(f.size / 1024)) + ' KB' : '')
-                          + (ok ? '' : '  ·  not a PDF or photo') })
+        el('b', { text: f.filename || 'Attachment' }),
+        el('span', { text: bits.join('  ·  ') })
       ]),
       seen ? el('span', { class: 'emdone', text: 'Imported' }) : null,
-      ok ? el('span', { class: 'chev' }) : null
+      k.ok ? el('div', { class: 'emacts' }, [
+        el('button', { class: 'emview', text: 'View',
+          onclick: () => openAttachment(m, full, h, f, !!seen) }),
+        el('button', { class: 'emadd', text: 'Add to Receipts',
+          onclick: () => importAttachment(m, full, h, f, !!seen) })
+      ]) : null
     ]);
   };
 
@@ -3290,7 +3397,8 @@ async function openEmail(m) {
       bodyText ? el('div', { class: 'embody', text: bodyText }) : null,
       el('div', {}, [
         el('label', { text: parts.files.length
-          ? 'Attachments — tap one to add it to receipts' : 'Attachments' }),
+          ? 'Attachments — View to read it first, or add it straight to receipts'
+          : 'Attachments' }),
         parts.files.length
           ? el('div', { class: 'card' }, parts.files.map(attachRow))
           : el('p', { class: 'hintline', text: 'This email has no attachments.' })
@@ -3300,8 +3408,155 @@ async function openEmail(m) {
   });
 }
 
+/* ---------- looking at the attachment ----------
+   The whole point is being able to read the small print — the total, the invoice
+   number, the date — before deciding anything. A PDF is rendered page by page at
+   enough resolution to stand being zoomed into; a photo is shown as it is. Both
+   use the same zoom and pan engine as the receipt viewer. */
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', 15000)
+    .then(() => {
+      if (!window.pdfjsLib) throw new Error('unavailable');
+      try {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      } catch { /* some builds have no worker to point at */ }
+      return window.pdfjsLib;
+    });
+}
+
+async function openAttachment(msg, full, headers, file, alreadyImported) {
+  const k = attachKind(file);
+  busy(true, 'Fetching the attachment…');
+  let bytes;
+  try {
+    bytes = await fetchAttachment(msg, file);
+  } catch (e) {
+    busy(false); toast(gmailError(e), true); if (!gmailLive()) paintEmails(); return;
+  }
+  busy(false);
+
+  const overlay = el('div', { class: 'viewer', id: 'aviewer' });
+  const body = el('div', { class: 'vbody', id: 'vbody' });
+  let objectUrl = null;
+
+  const close = () => {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    overlay.remove();
+  };
+
+  overlay.appendChild(el('div', { class: 'vhead' }, [
+    el('button', { class: 'icb', id: 'avclose', 'aria-label': 'Close', onclick: close,
+      html: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>' }),
+    el('b', { text: file.filename || 'Attachment' }),
+    el('button', { class: 'icb vreset', 'aria-label': 'Reset zoom',
+      html: '<svg viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 012-2h3M16 3h3a2 2 0 012 2v3M21 16v3a2 2 0 01-2 2h-3M8 21H5a2 2 0 01-2-2v-3"/></svg>' })
+  ]));
+  overlay.appendChild(body);
+
+  // page controls are only built for a PDF with more than one page
+  const prev = el('button', { class: 'icb', id: 'avprev', 'aria-label': 'Previous page',
+    html: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>' });
+  const next = el('button', { class: 'icb', id: 'avnext', 'aria-label': 'Next page',
+    html: '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' });
+  const counter = el('b', { id: 'avpage', text: '' });
+  const zoomOut = el('button', { class: 'icb', id: 'avzoomout', 'aria-label': 'Zoom out', text: '−' });
+  const zoomIn  = el('button', { class: 'icb', id: 'avzoomin',  'aria-label': 'Zoom in',  text: '+' });
+  const zoomPair = el('div', { class: 'vzoom' }, [zoomOut, zoomIn]);
+  const bar = el('div', { class: 'vpages', id: 'avbar' },
+    k.isPdf ? [prev, counter, next, zoomPair] : [zoomPair]);
+  overlay.appendChild(bar);
+
+  overlay.appendChild(el('div', { class: 'vfoot' }, [
+    el('button', { class: 'btn btn-ghost', id: 'avback', text: 'Close', onclick: close }),
+    el('button', { class: 'btn btn-primary', id: 'avadd', text: 'Add to Receipts',
+      onclick: () => { close(); importAttachment(msg, full, headers, file, alreadyImported, bytes); } })
+  ]));
+
+  document.body.appendChild(overlay);
+
+  let gestures = null;
+  const bindZoomButtons = () => {
+    zoomIn.onclick  = () => gestures && gestures.zoomBy(1.5);
+    zoomOut.onclick = () => gestures && gestures.zoomBy(1 / 1.5);
+  };
+
+  if (k.isPdf) {
+    let pdf = null, page = 1, rendering = false;
+    counter.textContent = 'Loading…';
+    prev.disabled = next.disabled = true;
+
+    const drawPage = async n => {
+      if (rendering || !pdf) return;
+      rendering = true;
+      try {
+        const pg = await pdf.getPage(n);
+        // The page is drawn at well above the size it is shown at, so pinching
+        // into the small print finds real pixels rather than a blown-up blur:
+        // screen width x the device's own pixel ratio x room to zoom. Capped by
+        // total pixels as well as by scale, so a big page cannot exhaust a phone.
+        const fit = pg.getViewport({ scale: 1 });
+        const wide = Math.max(320, body.clientWidth || 360);
+        const dpr = Math.min(3, window.devicePixelRatio || 1);
+        let scale = Math.min(5, Math.max(1.5, (wide * dpr * 2.5) / fit.width));
+        const MAXPX = 6e6;
+        if (fit.width * fit.height * scale * scale > MAXPX)
+          scale = Math.sqrt(MAXPX / (fit.width * fit.height));
+        const vp = pg.getViewport({ scale });
+        const canvas = el('canvas', { id: 'avcanvas' });
+        canvas.width = Math.round(vp.width);
+        canvas.height = Math.round(vp.height);
+        await pg.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        body.innerHTML = '';
+        body.appendChild(canvas);
+        overlay.classList.remove('zoomed');
+        gestures = bindZoomGestures(overlay, canvas, body);
+        bindZoomButtons();
+        counter.textContent = 'Page ' + n + ' of ' + pdf.numPages;
+        prev.disabled = n <= 1;
+        next.disabled = n >= pdf.numPages;
+      } catch {
+        body.innerHTML = '';
+        body.appendChild(el('p', { class: 'vmsg', text: 'That page could not be drawn.' }));
+      } finally {
+        rendering = false;
+      }
+    };
+
+    try {
+      const lib = await loadPdfJs();
+      pdf = await lib.getDocument({ data: bytes.slice(0) }).promise;
+      page = 1;
+      await drawPage(1);
+      prev.onclick = () => { if (page > 1) { page--; drawPage(page); } };
+      next.onclick = () => { if (page < pdf.numPages) { page++; drawPage(page); } };
+    } catch {
+      counter.textContent = '';
+      bar.classList.add('hide');
+      body.innerHTML = '';
+      body.appendChild(el('p', { class: 'vmsg', id: 'avfail', text:
+        'This PDF could not be displayed here — the viewer needs a connection the '
+        + 'first time it is used. You can still add it to your receipts.' }));
+    }
+  } else {
+    const blob = new Blob([bytes], { type: k.type });
+    objectUrl = URL.createObjectURL(blob);
+    const img = el('img', { id: 'avimg', src: objectUrl, alt: file.filename || 'Attachment',
+                            decoding: 'async' });
+    img.onerror = () => {
+      body.innerHTML = '';
+      body.appendChild(el('p', { class: 'vmsg', id: 'avfail',
+        text: 'That image could not be displayed.' }));
+    };
+    body.appendChild(img);
+    gestures = bindZoomGestures(overlay, img, body);
+    bindZoomButtons();
+  }
+}
+
 /* ---------- attachment → the existing receipt form ---------- */
-async function importAttachment(msg, full, headers, file, alreadyImported) {
+async function importAttachment(msg, full, headers, file, alreadyImported, preloaded) {
   if (alreadyImported) {
     const go = await ask('Already imported',
       `"${file.filename}" from this email has already been added to your receipts. `
@@ -3309,23 +3564,16 @@ async function importAttachment(msg, full, headers, file, alreadyImported) {
     if (!go) return;
   }
 
+  const k = attachKind(file);
   busy(true, 'Fetching the attachment…');
   try {
-    let bytes;
-    if (file.data) bytes = decodeB64Url(file.data);
-    else {
-      const att = await gmailFetch('/messages/' + msg.id + '/attachments/' + file.attachmentId);
-      if (!att || !att.data) throw new Error('The attachment could not be downloaded.');
-      bytes = decodeB64Url(att.data);
-    }
-    if (!bytes.length) throw new Error('That attachment came back empty.');
+    const bytes = preloaded || await fetchAttachment(msg, file);
 
-    const blob = new File([bytes], file.filename,
-      { type: /pdf/i.test(file.mimeType) ? 'application/pdf' : file.mimeType });
+    const blob = new File([bytes], file.filename || 'attachment', { type: k.type });
 
     // what the receipt form should open with. The date comes from the email;
-    // the total and invoice number are only ever suggestions from the reader,
-    // and VAT is left entirely to the form's own 20% default.
+    // the total and invoice number are only ever suggestions read out of the
+    // document, and VAT is left entirely to the form's own 20% default.
     emailImport = {
       messageId: msg.id,
       attachmentId: file.attachmentId || file.filename,
@@ -3352,57 +3600,140 @@ async function importAttachment(msg, full, headers, file, alreadyImported) {
   }
 }
 
-/* Before an imported receipt is filed, look for one that is already there.
-   A matching total on its own is never proof — two real invoices can come to
-   the same penny — so this only ever warns and lets the choice be made. */
-async function duplicateWarning(amt, invoiceNo, dateStr) {
-  if (!emailImport) return true;
-  let rows = [];
+/* ============================================================
+   POSSIBLE DUPLICATES
+   Two receipts with the same total are not the same receipt. One job can be
+   paid for at the counter and again online; two suppliers can land on the same
+   round figure in the same week. So nothing here ever refuses a receipt — it
+   shows you the one it found and lets you decide.
+
+   The check runs while you type the total, so the warning appears and clears as
+   the figure changes, and again at the moment you save.
+   ============================================================ */
+let dupRows = null, dupRowsAt = 0;
+// a function declaration, not a const: loadMonth() is defined above this and calls it
+function forgetDupIndex() { try { dupRows = null; } catch { /* not reached yet */ } }
+
+async function loadDupIndex(force) {
+  if (!force && dupRows && Date.now() - dupRowsAt < 120000) return dupRows;
   try {
     const res = await db.from('receipts').select('*');
     if (res.error) throw res.error;
-    rows = res.data || [];
-  } catch { return true; }        // never block a save on the check itself
+    dupRows = res.data || [];
+    dupRowsAt = Date.now();
+  } catch { dupRows = dupRows || []; }   // never block on the check itself
+  return dupRows;
+}
 
-  const sameFile = rows.filter(r =>
-    r.gmail_message_id === emailImport.messageId &&
-    r.gmail_attachment_id === emailImport.attachmentId);
-  const sameInvoice = invoiceNo
-    ? rows.filter(r => r.invoice_no && String(r.invoice_no).toLowerCase() === String(invoiceNo).toLowerCase())
-    : [];
-  const sameTotal = amt !== null && amt !== undefined
-    ? rows.filter(r => Number(r.amount) === Number(amt)) : [];
+const pence = n => Math.round(Number(n) * 100);
 
-  if (!sameFile.length && !sameInvoice.length && !sameTotal.length) return true;
+/* The strongest thing found, or nothing. Invoice number beats total, and both
+   together is stronger still. */
+async function duplicateMatch(amt, invoiceNo, excludeId) {
+  const hasAmt = amt !== null && amt !== undefined && isFinite(Number(amt));
+  const inv = invoiceNo ? String(invoiceNo).trim().toLowerCase() : '';
+  if (!hasAmt && !inv) return null;
 
-  let title, lines;
-  if (sameFile.length) {
-    title = 'Already imported';
-    lines = ['This exact attachment has already been brought in from this email.'];
-  } else if (sameInvoice.length) {
-    title = 'Possible duplicate — same invoice number';
-    lines = ['An existing receipt has invoice number ' + invoiceNo + '.'];
-  } else {
-    title = 'Possible duplicate';
-    lines = ['An existing receipt has the same total: ' + money(amt) + '.'];
+  const rows = (await loadDupIndex())
+    .filter(r => !excludeId || String(r.id) !== String(excludeId));
+
+  const sameInvoice = inv
+    ? rows.filter(r => r.invoice_no && String(r.invoice_no).trim().toLowerCase() === inv) : [];
+  const sameTotal = hasAmt
+    ? rows.filter(r => r.amount !== null && r.amount !== undefined &&
+                       pence(r.amount) === pence(amt)) : [];
+  const both = sameInvoice.filter(r => sameTotal.includes(r));
+
+  if (both.length)        return { kind: 'both',    match: both[0],        rows: both,        amt, invoiceNo };
+  if (sameInvoice.length) return { kind: 'invoice', match: sameInvoice[0], rows: sameInvoice, amt, invoiceNo };
+  if (sameTotal.length)   return { kind: 'total',   match: sameTotal[0],   rows: sameTotal,   amt, invoiceNo };
+  return null;
+}
+
+const dupTitle = kind =>
+  kind === 'both'    ? 'Possible duplicate — same invoice number and same total'
+: kind === 'invoice' ? 'Possible duplicate — same invoice number'
+                     : 'Possible duplicate';
+
+function dupHeadline(m) {
+  if (m.kind === 'total')
+    return 'This receipt has the same total as an existing receipt: ' + money(m.amt) + '.';
+  if (m.kind === 'invoice')
+    return 'An existing receipt has invoice number ' + m.invoiceNo + '.';
+  return 'An existing receipt has invoice number ' + m.invoiceNo
+       + ' and the same total: ' + money(m.amt) + '.';
+}
+
+const dupLine = r => [r.description || 'Receipt',
+                      prettyDate(String(r.receipt_date)),
+                      r.amount != null ? money(r.amount) : null,
+                      folderName(r.folder_id) || 'Unfiled'].filter(Boolean).join('  ·  ');
+
+/* The panel that sits under the total on the form: what was found, and a way to
+   go and look at it before deciding. */
+function paintDupBox(box, m) {
+  box.innerHTML = '';
+  box.classList.toggle('hide', !m);
+  if (!m) return;
+
+  const r = m.match;
+  const isPdf = r.file_type === 'application/pdf';
+  const thumb = (!r.image_cleared && !isPdf)
+    ? el('img', { class: 'dupimg', alt: '', decoding: 'async' })
+    : el('div', { class: 'dupfile', text: isPdf ? 'PDF' : '—' });
+
+  if (thumb.tagName === 'IMG') {
+    const cached = thumbs.get(r.file_path);
+    if (cached) thumb.src = cached;
+    else db.storage.from(BUCKET).createSignedUrl(r.file_path, 3600).then(({ data }) => {
+      const u = data && data.signedUrl;
+      if (u) { thumbs.set(r.file_path, u); thumb.src = u; }
+    }).catch(() => {});
   }
 
-  const match = (sameFile[0] || sameInvoice[0] || sameTotal[0]);
-  if (match) {
-    lines.push('');
-    lines.push([match.description || 'Receipt',
-                prettyDate(String(match.receipt_date)),
-                match.amount != null ? money(match.amount) : null]
-                .filter(Boolean).join('  ·  '));
-    if (sameTotal.length && !sameFile.length && !sameInvoice.length &&
-        String(match.receipt_date) === String(dateStr))
-      lines.push('It is also dated the same day.');
-  }
-  if (!sameFile.length)
-    lines.push('', 'Two different invoices can legitimately come to the same amount, '
-                 + 'so this is only a warning.');
+  const more = m.rows.length > 1
+    ? ' (' + m.rows.length + ' receipts match)' : '';
 
-  return await ask(title, lines.join('\n'), 'Add anyway');
+  box.appendChild(thumb);
+  box.appendChild(el('div', { class: 'dupmeta' }, [
+    el('b', { text: dupTitle(m.kind) }),
+    el('span', { text: dupHeadline(m) + more }),
+    el('span', { text: dupLine(r) }),
+    el('span', { class: 'hintline', text:
+      'Two different invoices can legitimately come to the same amount, so this is '
+      + 'only a warning — saving is still up to you.' }),
+    el('button', { class: 'dupopen', text: 'View that receipt',
+      onclick: () => openReceipt(r) })
+  ]));
+}
+
+/* The question asked at the moment of saving. Always answerable, never final. */
+async function duplicateWarning(amt, invoiceNo, dateStr, excludeId) {
+  // the very same email attachment twice is its own, plainer case
+  if (emailImport) {
+    const rows = await loadDupIndex();
+    const sameFile = rows.filter(r =>
+      r.gmail_message_id === emailImport.messageId &&
+      r.gmail_attachment_id === emailImport.attachmentId);
+    if (sameFile.length) {
+      const lines = ['This exact attachment has already been added to your receipts.', '',
+                     dupLine(sameFile[0])];
+      return await ask('Already imported', lines.join('\n'), 'Add anyway');
+    }
+  }
+
+  const m = await duplicateMatch(amt, invoiceNo, excludeId);
+  if (!m) return true;
+
+  const lines = [dupHeadline(m)];
+  if (m.rows.length > 1) lines.push(m.rows.length + ' receipts already match.');
+  lines.push('', dupLine(m.match));
+  if (m.kind === 'total' && String(m.match.receipt_date) === String(dateStr))
+    lines.push('It is also dated the same day.');
+  lines.push('', 'Two different invoices can legitimately come to the same amount, '
+               + 'so this is only a warning.');
+
+  return await ask(dupTitle(m.kind), lines.join('\n'), 'Add anyway');
 }
 
 /* ============================================================
@@ -3746,6 +4077,16 @@ function bindZoomGestures(host, img, area) {
   });
 
   overlay.querySelector('.vreset')?.addEventListener('click', reset);
+
+  // the same engine, driven by a button rather than two fingers — a phone pinches,
+  // everything else taps + and −
+  const zoomBy = k => {
+    z = Math.min(MAXZ, Math.max(1, z * k));
+    if (z <= 1.01) { z = 1; tx = ty = 0; }
+    overlay.classList.toggle('zoomed', z > 1.01);
+    clamp(); schedule();
+  };
+  return { zoomBy, reset, zoom: () => z };
 }
 
 async function removeReceipt(r, viewer) {
@@ -4091,11 +4432,25 @@ function findDate(text) {
    stripped before any number is read off a line. */
 const dropRates = s => s.replace(/\d+(?:[.,]\d+)?\s*%/g, ' ');
 
+/* "£1,245.60" is twelve hundred and forty-five pounds, not five pounds sixty.
+   Printed invoices group their thousands; till rolls usually do not. Both are
+   read here, and a figure that runs on into more digits is not a figure at all. */
+function moneyValue(raw) {
+  const s = String(raw);
+  const i = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
+  if (i < 0) return null;
+  const whole = s.slice(0, i).replace(/\D/g, '');
+  const frac  = s.slice(i + 1).replace(/\D/g, '');
+  const v = parseFloat((whole || '0') + '.' + frac);
+  return isFinite(v) ? v : null;
+}
+
 function lastMoneyOn(line) {
-  const hits = [...dropRates(line).matchAll(/(\d{1,5}[.,]\d{2})/g)];
+  const hits = [...dropRates(line).matchAll(
+    /(\d{1,3}(?:[ ,.]\d{3})+[.,]\d{2}|\d{1,5}[.,]\d{2})(?!\d)/g)];
   if (!hits.length) return null;
-  const v = parseFloat(hits[hits.length - 1][1].replace(',', '.'));
-  return isFinite(v) && v >= 0 && v < 100000 ? v : null;
+  const v = moneyValue(hits[hits.length - 1][1]);
+  return v !== null && v >= 0 && v < 1000000 ? v : null;
 }
 
 function findTotal(text) {
@@ -4199,6 +4554,68 @@ async function getWorker() {
 /* Runs behind the details sheet rather than in front of it, so nothing is ever
    waiting on the reader. `token` stops a slow result landing in a later sheet. */
 let readToken = 0;
+/* A PDF invoice already contains its own text, so there is nothing to OCR: the
+   words come straight out of the document. Only two things are looked for — the
+   total, so a duplicate can be spotted, and the invoice number. The VAT rate is
+   never read off the document; it stays the form's 20% default, which is yours
+   to change. */
+const PDF_TEXT_PAGES = 5;
+
+/* The lines matter: "Total" and "VAT" on one line means something different from
+   "Total" on its own. pdf.js marks line ends itself; where it does not, the
+   baseline height of each fragment puts the lines back together. */
+function pdfLines(items) {
+  const list = items || [];
+  if (list.some(it => it.hasEOL))
+    return list.map(it => (it.str || '') + (it.hasEOL ? '\n' : ' ')).join('');
+
+  const rows = new Map();
+  list.forEach(it => {
+    const y = Math.round((((it.transform || [])[5]) || 0) * 2) / 2;
+    if (!rows.has(y)) rows.set(y, []);
+    rows.get(y).push(it.str || '');
+  });
+  return [...rows.entries()].sort((a, b) => b[0] - a[0])
+                            .map(([, v]) => v.join(' ')).join('\n');
+}
+
+async function readPdfText(bytes) {
+  const lib = await loadPdfJs();
+  const pdf = await lib.getDocument({ data: bytes.slice(0) }).promise;
+  const pages = Math.min(PDF_TEXT_PAGES, pdf.numPages || 1);
+  let out = '';
+  for (let i = 1; i <= pages; i++) {
+    const tc = await (await pdf.getPage(i)).getTextContent();
+    out += pdfLines(tc && tc.items) + '\n';
+  }
+  return out;
+}
+
+async function readPdf(target, token) {
+  let timer;
+  const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('slow')), 30000); });
+  try {
+    const bytes = new Uint8Array(await Promise.race([target.photo.arrayBuffer(), timeout]));
+    const txt = await Promise.race([readPdfText(bytes), timeout]);
+    if (token !== readToken) return;
+    const tot = findTotal(txt);
+    target.read = {
+      ok: true,
+      date: null,                      // the date comes from the email or the form
+      total: tot ? tot.amount : null,
+      raw: { total: tot && tot.raw },
+      invoiceNo: findInvoiceNo(txt),
+      currency: findCurrency(txt)
+    };
+  } catch (e) {
+    if (token !== readToken) return;
+    target.read = { ok: false, why: /slow/.test(String(e && e.message)) ? 'slow' : 'unavailable' };
+  } finally {
+    clearTimeout(timer);
+  }
+  if (token === readToken) applyRead(target);
+}
+
 async function readReceipt(target, token) {
   let timer;
   const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('slow')), 60000); });
@@ -4501,7 +4918,9 @@ async function openReceiptEdit(r) {
     description: r.description || '',
     date: String(r.receipt_date),
     amount: r.amount, vat: r.vat, net: r.net, rate: r.vat_rate,
-    folderId: r.folder_id
+    folderId: r.folder_id,
+    // a receipt is never a duplicate of itself
+    excludeId: r.id, invoiceNo: r.invoice_no || null
   });
 
   // the picture, tappable to open it full screen where it zooms and pans
@@ -4543,6 +4962,10 @@ async function openReceiptEdit(r) {
       }
       vatRate = Math.round(vatRate * 100) / 100;
     }
+
+    // changing a total onto one that already exists gets the same warning as a
+    // new receipt does — and the same free choice
+    if (!await duplicateWarning(amt, r.invoice_no || null, F.date.value, r.id)) return;
 
     save.disabled = true;
     busy(true, 'Saving changes…');
@@ -4600,6 +5023,9 @@ function receiptFieldSet(initial) {
   const date   = el('input', { type:'date', id:'f_date',
                     value: init.date || ymd(new Date()) });
   const sums   = el('p', { class:'sumline' });
+  // shown under the figures the moment a total matches one already on file, and
+  // gone again as soon as it does not
+  const dupbox = el('div', { class:'dupbox hide', id:'f_dup' });
 
   let folderId = init.folderId || null;
   const folderBtn = el('button', { class: 'pickfolder', id: 'f_folderpick' });
@@ -4636,6 +5062,22 @@ function receiptFieldSet(initial) {
   const hold  = (k, list) => { if (!held.includes(k)) held.push(k); list.push(k); };
   const release = k => { const i = held.indexOf(k); if (i > -1) held.splice(i, 1); };
 
+  let dupInvoice = init.invoiceNo || null;
+  let dupTimer = 0, dupSeq = 0, dupArmed = false;
+  const runDupCheck = async () => {
+    const seq = ++dupSeq;
+    const amt = amount.value.trim() ? parseMoney(amount.value) : null;
+    let m = null;
+    try { m = await duplicateMatch(amt, dupInvoice, init.excludeId || null); } catch { m = null; }
+    if (seq !== dupSeq) return;              // a later keystroke has overtaken this one
+    paintDupBox(dupbox, m);
+  };
+  const checkDup = () => {
+    dupArmed = true;
+    clearTimeout(dupTimer);
+    dupTimer = setTimeout(runDupCheck, 250);
+  };
+
   const recalc = src => {
     if (src) hold(src, touched);
     // Correcting the total or the rate is a request to work the VAT out again.
@@ -4668,6 +5110,9 @@ function receiptFieldSet(initial) {
     const warn = reconcileWarning(v);
     sums.textContent = warn || '';
     sums.className = 'sumline' + (warn ? ' bad' : '');
+    // a figure the user has touched — or one a document handed over — is worth
+    // checking; simply opening a receipt that is already filed is not
+    if (src || dupArmed) checkDup();
   };
   net.oninput    = () => recalc('net');
   vat.oninput    = () => recalc('vat');
@@ -4686,7 +5131,10 @@ function receiptFieldSet(initial) {
   if (init.rate !== null && init.rate !== undefined) hold('rate', seeded);
   recalc(null);
 
-  return { desc, amount, vat, net, rate, date, sums, folderBtn, recalc,
+  return { desc, amount, vat, net, rate, date, sums, folderBtn, recalc, dupbox,
+           checkDup,
+           setInvoice: no => { dupInvoice = no || null; checkDup(); },
+           invoiceNo: () => dupInvoice,
            userTyped: k => held.includes(k),
            hold: keys => { (keys || []).forEach(k => hold(k, touched)); recalc(null); },
            folder: () => folderId,
@@ -4701,6 +5149,7 @@ function receiptFieldSet(initial) {
                el('div', {}, [el('label', { for:'f_net', text:'Net ' + CURRENCY }), net])
              ]),
              sums,
+             dupbox,
              el('div', {}, [el('label', { for:'f_date', text:'Date' }), date]),
              el('div', {}, [el('label', { text:'Folder' }), folderBtn])
            ] };
@@ -4776,9 +5225,14 @@ function openDetails() {
 
   // hand the reader its fields, then let it work while the sheet is already up
   pending.fields = { date, amount, vat, net, rate, readbox,
-    userTyped: F.userTyped, afterRead: F.hold };
+    userTyped: F.userTyped, afterRead: F.hold,
+    setInvoice: F.setInvoice, checkDup: F.checkDup };
   if (isPdf) {
-    renderRead(readbox, null);                    // nothing to OCR in a PDF
+    // the words are already in the document — read the total and invoice number
+    // straight out of it, and never the VAT rate
+    renderRead(readbox, 'reading');
+    readToken++;
+    readPdf(pending, readToken);
   } else {
     renderRead(readbox, 'reading');
     readToken++;
@@ -4824,7 +5278,7 @@ function renderRead(box, state, found) {
   if (found.total !== null) line('Total', money(found.total), 'printed');
   if (found.invoiceNo) line('Invoice no', found.invoiceNo);
   bits.push(el('span', { class: 'unknown',
-    text: 'VAT is worked out from the rate below, not read off the picture. '
+    text: 'VAT is worked out from the rate below, never read off the receipt. '
         + 'Change the rate if this one is not at ' + DEFAULT_VAT_RATE + '%.' }));
 
   box.appendChild(el('div', { class: 'rmark', html: WARN_ICON }));
@@ -4860,6 +5314,10 @@ function applyRead(target) {
     invoice_no: r.invoiceNo || null,
     currency: r.currency || null
   };
+  // an invoice number read off the document is worth checking against the ones
+  // already filed, the same as the total is
+  if (f.setInvoice) f.setInvoice(r.invoiceNo || null);
+  else if (f.checkDup) f.checkDup();
 
   renderRead(f.readbox, 'done', {
     date: r.date && r.date.date, dateRaw: r.date && r.date.raw,
@@ -4925,10 +5383,11 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
     vatRate = Math.round(vatRate * 100) / 100;
   }
 
-  // An import gets one look for something already on file first. This happens
-  // before the overlay goes up, so the question is answerable.
-  if (emailImport && !await duplicateWarning(amt, (pending.meta && pending.meta.invoice_no) || null,
-                                             dateStr)) return;
+  // One last look for something already on file — typed in by hand or brought in
+  // from an email, it gets the same check. This happens before the overlay goes
+  // up, so the question is answerable.
+  if (!await duplicateWarning(amt, (pending.meta && pending.meta.invoice_no) || null,
+                              dateStr)) return;
 
   if (saving) return;                 // a second tap cannot start a second save
   saving = true;
