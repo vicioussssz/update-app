@@ -660,6 +660,22 @@ main{flex:1;padding:16px 12px 0}
 .emclip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;
   color:var(--accent);margin-top:3px}
 
+/* the way to the next page, and the quiet line when there is not one */
+.loadmore{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;
+  margin-top:12px;min-height:48px;padding:13px 16px;border-radius:var(--radius);
+  background:var(--surface);font-size:15px;font-weight:600;color:var(--accent);
+  transition:transform .12s ease,opacity .12s ease,background .15s ease}
+.loadmore:active{transform:scale(.985);background:var(--surface-2)}
+.loadmore[disabled]{color:var(--muted);opacity:.85}
+.loadmore .ldot{display:none;width:15px;height:15px;flex:none;
+  border:2px solid var(--surface-3);border-top-color:var(--muted);border-radius:50%;
+  animation:sp .8s linear infinite}
+.loadmore.working .ldot{display:block}
+.emend{margin-top:14px;text-align:center;font-size:13px;color:var(--faint)}
+/* rows that have just arrived settle in; the ones above them do not move */
+.emnew{animation:rowin .24s ease both}
+@keyframes rowin{from{opacity:0;transform:translateY(6px)}}
+
 .emfacts{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
 .emfact{display:flex;gap:10px;font-size:14.5px}
 .emfact b{width:64px;flex:none;color:var(--muted);font-weight:400;font-size:13.5px}
@@ -766,6 +782,62 @@ main{flex:1;padding:16px 12px 0}
 .spin{width:32px;height:32px;border:3px solid var(--line);
   border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+/* ============================================================
+   POLISH
+   Movement is here to explain what just happened — a sheet came from the
+   bottom, a page replaced another, a button took the tap. Everything is short
+   (150-260ms), uses only transform and opacity so it runs on the GPU and cannot
+   shift layout, and the whole lot stands down for anyone who has asked their
+   phone for less motion.
+   ============================================================ */
+
+/* one section giving way to another */
+@keyframes sectin{from{opacity:0;transform:translateY(8px)}}
+#app:not(.hide),#plan:not(.hide),#site:not(.hide),#emails:not(.hide){
+  animation:sectin .24s cubic-bezier(.32,.72,0,1) both}
+
+/* a tap should be felt before anything else happens */
+.btn,.icb,.emrow,.rrow,.rcrow,.srrow,.ditem,.ematt,.loadmore,.pickfolder,.pickproject,
+.statuses button,.emacts button,.dupbox .dupmeta button{
+  transition:transform .13s cubic-bezier(.32,.72,0,1),opacity .13s ease,
+             background-color .16s ease,color .16s ease}
+.btn:active,.loadmore:active,.emacts button:active{transform:scale(.975)}
+.icb:active{transform:scale(.9);opacity:.75}
+.emrow:active,.rrow:active,.rcrow:active,.srrow:active,.ditem:active,.ematt:active,
+.pickfolder:active,.pickproject:active{transform:scale(.993)}
+.btn[disabled],.loadmore[disabled]{transform:none}
+
+/* selected things settle into place rather than snapping */
+.cell,.statuses button,.ditem,.chip,.seg button{
+  transition:background-color .18s ease,color .18s ease,box-shadow .18s ease}
+
+/* the sheet leaves the way it came in */
+.scrim.closing{animation:fadeout .18s ease both;pointer-events:none}
+.scrim.closing .sheet{animation:down .18s cubic-bezier(.32,.72,0,1) both}
+@keyframes fadeout{to{opacity:0}}
+@keyframes down{to{transform:translateY(100%)}}
+@media(min-width:560px){
+  .scrim.closing .sheet{animation:fadeout .16s ease both}
+}
+
+/* the working overlay should not arrive like a slammed door */
+#busy{animation:fade .16s ease}
+#toast{animation:toastin .2s cubic-bezier(.32,.72,0,1)}
+@keyframes toastin{from{opacity:0;transform:translateX(-50%) translateY(8px)}}
+
+/* scrolling stays inside the thing being scrolled */
+.sbody,#emlist,#recentlist,.embody{overscroll-behavior:contain}
+
+/* and none of it happens if the phone has been asked for less movement */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.01ms!important;scroll-behavior:auto!important}
+  .btn:active,.icb:active,.emrow:active,.rrow:active,.rcrow:active,.srrow:active,
+  .ditem:active,.ematt:active,.loadmore:active,.emacts button:active,
+  .pickfolder:active,.pickproject:active{transform:none}
+}
 .track{width:min(240px,60vw);height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .track i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
 </style>
@@ -3020,6 +3092,9 @@ let gmailToken = null;        // { access_token, expires } — this tab only
 let gmailAddress = null;      // the connected mailbox, for showing on screen
 let gmailClient = null;       // the Google Identity Services token client
 let emailList = [];
+let emailToken = null;        // Gmail's pointer to the next page of this same list
+let emailMore = false;        // whether Gmail says there is another page after it
+let emailBusy = false;        // a page is in flight; a second tap must not start another
 let emailImport = null;       // what is being brought in, while it is in flight
 
 const gmailConfigured = () => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID);
@@ -3109,6 +3184,7 @@ async function connectGmail() {
 function disconnectGmail() {
   const tok = gmailToken && gmailToken.access_token;
   gmailToken = null; gmailAddress = null; emailList = [];
+  emailToken = null; emailMore = false; emailBusy = false;
   attachBytes.clear();                       // nothing of the mailbox is kept behind
   // hand the token back so it stops working immediately, rather than just
   // forgetting it on this device
@@ -3137,39 +3213,75 @@ $('#emrefresh').onclick = () => {
   refreshEmails();
 };
 
-async function refreshEmails() {
-  busy(true, 'Loading your email…');
-  try {
-    const list = await gmailFetch('/messages?maxResults=25');
-    const ids = (list.messages || []).map(m => m.id);
-    const out = [];
-    for (let i = 0; i < ids.length; i++) {
-      busy(true, `Loading email ${i + 1} of ${ids.length}…`, (i + 1) / ids.length);
-      try {
-        const m = await gmailFetch('/messages/' + ids[i] +
-          '?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date');
-        const h = {};
-        ((m.payload && m.payload.headers) || []).forEach(x => { h[x.name.toLowerCase()] = x.value; });
-        out.push({
-          id: m.id, from: h.from || '', subject: h.subject || '(no subject)',
-          date: h.date || '', snippet: m.snippet || '',
-          hasAttachment: /\battachment\b/i.test(String(m.payload && m.payload.mimeType)) ||
-                         ((m.payload && m.payload.parts) || []).some(p => p.filename)
-        });
-      } catch (e) {
-        if (String(e.message) === 'gmail-disconnected') throw e;
-        // one unreadable message must not sink the whole list
-      }
+/* ---------- loading the list, a page at a time ----------
+   Gmail hands back 25 messages and a pointer to the next 25. The pointer is
+   kept, so "Load 25 more" continues through the same result set rather than
+   asking for the first 25 again — and nothing is fetched until it is asked for.
+   The list is only ever added to: the emails already on screen stay put, and a
+   page that fails changes nothing, so pressing the button again simply retries. */
+const EMAIL_PAGE = 25;
+
+/* One page: the ids, then each message's headers. `onStep` reports progress
+   without deciding where it is shown. */
+async function fetchEmailPage(token, onStep) {
+  const list = await gmailFetch('/messages?maxResults=' + EMAIL_PAGE +
+    (token ? '&pageToken=' + encodeURIComponent(token) : ''));
+  const ids = (list.messages || []).map(m => m.id);
+  const rows = [];
+  for (let i = 0; i < ids.length; i++) {
+    if (onStep) onStep(i + 1, ids.length);
+    try {
+      const m = await gmailFetch('/messages/' + ids[i] +
+        '?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date');
+      const h = {};
+      ((m.payload && m.payload.headers) || []).forEach(x => { h[x.name.toLowerCase()] = x.value; });
+      rows.push({
+        id: m.id, from: h.from || '', subject: h.subject || '(no subject)',
+        date: h.date || '', snippet: m.snippet || '',
+        hasAttachment: /\battachment\b/i.test(String(m.payload && m.payload.mimeType)) ||
+                       ((m.payload && m.payload.parts) || []).some(p => p.filename)
+      });
+    } catch (e) {
+      if (String(e.message) === 'gmail-disconnected') throw e;
+      // one unreadable message must not sink the whole page
     }
-    emailList = out;
-    busy(false);
-    paintEmails();
+  }
+  return { rows, next: list.nextPageToken || null };
+}
+
+async function loadEmails(append) {
+  if (emailBusy) return;                      // one page at a time, however many taps
+  emailBusy = true;
+
+  if (append) paintEmailFoot();               // the button says it is working
+  else { emailToken = null; busy(true, 'Loading your email…'); }
+
+  try {
+    const page = await fetchEmailPage(append ? emailToken : null, (n, of) => {
+      if (append) paintEmailFoot(n + ' of ' + of);
+      else busy(true, `Loading email ${n} of ${of}…`, n / of);
+    });
+
+    const seen = new Set(append ? emailList.map(m => m.id) : []);
+    const fresh = page.rows.filter(m => !seen.has(m.id));   // never the same email twice
+    emailList = append ? emailList.concat(fresh) : page.rows;
+    emailToken = page.next;
+    emailMore = !!page.next;
+    emailBusy = false;
+
+    if (append) { appendEmailRows(fresh); paintEmailFoot(); }
+    else { busy(false); paintEmails(); }
   } catch (e) {
+    // nothing already on screen is thrown away: the pointer is untouched, so the
+    // same page can simply be asked for again
+    emailBusy = false;
     busy(false);
-    paintEmails();
+    if (append) paintEmailFoot(); else paintEmails();
     toast(gmailError(e), true);
   }
 }
+
+const refreshEmails = () => loadEmails(false);
 
 const emailWho = from => {
   const m = String(from).match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
@@ -3226,16 +3338,64 @@ function paintEmails() {
     return;
   }
 
-  host.appendChild(el('div', { class: 'card' }, emailList.map(m =>
-    el('button', { class: 'emrow', onclick: () => openEmail(m) }, [
-      el('div', { class: 'emtop' }, [
-        el('b', { text: emailWho(m.from) }),
-        el('span', { text: emailWhen(m.date) })
-      ]),
-      el('div', { class: 'emsub', text: m.subject }),
-      el('div', { class: 'emsnip', text: m.snippet }),
-      m.hasAttachment ? el('span', { class: 'emclip', text: '📎 Attachment' }) : null
-    ]))));
+  host.appendChild(el('div', { class: 'card', id: 'emcard' }, emailList.map(emailRow)));
+  host.appendChild(el('div', { id: 'emfoot' }));
+  paintEmailFoot();
+}
+
+const emailRow = m => el('button', { class: 'emrow', onclick: () => openEmail(m) }, [
+  el('div', { class: 'emtop' }, [
+    el('b', { text: emailWho(m.from) }),
+    el('span', { text: emailWhen(m.date) })
+  ]),
+  el('div', { class: 'emsub', text: m.subject }),
+  el('div', { class: 'emsnip', text: m.snippet }),
+  m.hasAttachment ? el('span', { class: 'emclip', text: '📎 Attachment' }) : null
+]);
+
+/* New emails join the bottom of the list that is already there — the page does
+   not reload, nothing above moves, and only the new rows fade in. */
+function appendEmailRows(rows) {
+  const card = $('#emcard');
+  if (!card) { paintEmails(); return; }
+  rows.forEach(m => {
+    const row = emailRow(m);
+    row.classList.add('emnew');
+    card.appendChild(row);
+  });
+}
+
+/* Under the list: the way to ask for the next page, what it is doing while it
+   fetches one, or a quiet line saying that is all of them. */
+function paintEmailFoot(progress) {
+  const foot = $('#emfoot');
+  if (!foot) return;
+
+  if (!emailMore && !emailBusy) {
+    foot.innerHTML = '';
+    if (emailList.length)
+      foot.appendChild(el('p', { class: 'emend', id: 'emend', text: 'No more emails.' }));
+    return;
+  }
+
+  // The button is built once and then only ever updated: a control that is
+  // replaced under the finger flickers, and a tap landing as it is swapped can
+  // be counted twice.
+  let btn = $('#emmore');
+  if (!btn) {
+    foot.innerHTML = '';
+    btn = el('button', { class: 'loadmore', id: 'emmore',
+      onclick: () => loadEmails(true) }, [
+      el('span', { class: 'ldot' }),
+      el('span', { class: 'lbl' })
+    ]);
+    foot.appendChild(btn);
+  }
+  btn.disabled = emailBusy;                // taps while it works do nothing
+  btn.classList.toggle('working', emailBusy);
+  btn.querySelector('.lbl').textContent = emailBusy
+    ? (progress ? 'Loading ' + progress + '…' : 'Loading…')
+    : 'Load ' + EMAIL_PAGE + ' more';
 }
 
 /* ---------- one email ---------- */
@@ -3555,6 +3715,15 @@ async function openAttachment(msg, full, headers, file, alreadyImported) {
   }
 }
 
+/* The two Gmail columns on the receipts table are optional extras, added by
+   sql/gmail-import-setup.sql. Postgrest says so in a recognisable way when they
+   are not there, and the app can carry on without them. */
+function missingGmailColumn(err) {
+  const m = String((err && (err.message || err.hint)) || '');
+  return (err && err.code === 'PGRST204') ||
+         (/schema cache/i.test(m) && /gmail_(message|attachment)_id/i.test(m));
+}
+
 /* ---------- attachment → the existing receipt form ---------- */
 async function importAttachment(msg, full, headers, file, alreadyImported, preloaded) {
   if (alreadyImported) {
@@ -3860,7 +4029,28 @@ function openSettings() {
 /* ============================================================
    SHEETS
    ============================================================ */
-function closeSheet() { $('#sheets').innerHTML = ''; }
+/* Sheets arrive by sliding up, so they leave the same way rather than vanishing.
+   The node is taken out of the flow immediately so nothing can be tapped while
+   it plays, and removed for real when it is done — or at once if the person has
+   asked for less motion. */
+const CLOSE_MS = 180;
+function closeSheet() {
+  const host = $('#sheets');
+  const scrim = host.querySelector('.scrim');
+  if (!scrim || reducedMotion()) { host.innerHTML = ''; return; }
+  scrim.classList.add('closing');
+  scrim.style.pointerEvents = 'none';
+  setTimeout(() => {
+    // only clear what was closing: another sheet may have opened in the meantime
+    if (scrim.parentNode === host && host.children.length === 1) host.innerHTML = '';
+    else scrim.remove();
+  }, CLOSE_MS);
+}
+
+const reducedMotion = () => {
+  try { return matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  catch { return false; }
+};
 
 function sheet({ title, sub, body, foot, onClose }) {
   const bail = () => { if (onClose) onClose(); closeSheet(); };
@@ -5402,7 +5592,10 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
       .upload(path, chosenBlob, { contentType: pending.type, upsert: false });
     if (up.error) throw up.error;
 
-    const { error } = await db.from('receipts').insert({
+    // A receipt is a receipt. These are the fields every one of them has,
+    // whether it was photographed at the merchant's counter or came off an
+    // email — nothing here knows or cares that Gmail exists.
+    const row = {
       receipt_date: dateStr,
       description,
       amount: amt,
@@ -5410,8 +5603,6 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
       net: netAmt,
       vat_rate: vatRate,
       invoice_no: (pending.meta && pending.meta.invoice_no) || null,
-      gmail_message_id: emailImport ? emailImport.messageId : null,
-      gmail_attachment_id: emailImport ? emailImport.attachmentId : null,
       currency: (pending.meta && pending.meta.currency) || 'GBP',
       folder_id: pending.folderId || null,
       file_path: path,
@@ -5419,7 +5610,28 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
       file_size: chosenBlob.size,
       uploaded_by: session.user.id,
       uploader_name: session.user.email
-    });
+    };
+    // and only a receipt that actually came from an email carries a note of
+    // where it came from
+    if (emailImport) {
+      row.gmail_message_id = emailImport.messageId;
+      row.gmail_attachment_id = emailImport.attachmentId;
+    }
+
+    let { error } = await db.from('receipts').insert(row);
+
+    // The Gmail columns are an optional extra on the table. If this database
+    // has not had them added yet, the receipt itself is still perfectly good:
+    // file it without the note of where it came from, and say so plainly rather
+    // than losing the receipt or pretending it was recorded.
+    let gmailRefLost = false;
+    if (error && emailImport && missingGmailColumn(error)) {
+      delete row.gmail_message_id;
+      delete row.gmail_attachment_id;
+      gmailRefLost = true;
+      ({ error } = await db.from('receipts').insert(row));
+    }
+
     if (error) {
       await db.storage.from(BUCKET).remove([path]);   // don't leave an orphan file
       throw error;
@@ -5436,7 +5648,10 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
     } else {
       discardPending();
       await loadMonth();
-      toast('Saved to ' + prettyDate(dateStr));
+      toast(gmailRefLost
+        ? 'Saved — but the link back to the email was not recorded: this database '
+          + 'has not had its Gmail columns added yet'
+        : 'Saved to ' + prettyDate(dateStr), gmailRefLost);
     }
   } catch (e) {
     toast(niceError(e), true);

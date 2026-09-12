@@ -8,6 +8,9 @@
     site_records: [],
     site_photos: [],
     missingTables: new Set(),   // name a table here to simulate "not created yet"
+    // name a column here to simulate a migration that was never run: any insert
+    // or select mentioning it fails the way PostgREST really fails
+    missingColumns: new Set(),
     session: null,
     listeners: [],
     files: new Map(),
@@ -17,14 +20,19 @@
   function emit(evt) { store.listeners.forEach(fn => fn(evt, store.session)); }
 
   function builder(table) {
-    const q = { table, _filters: [], _op: null, _payload: null };
+    const q = { table, _filters: [], _op: null, _payload: null,
+                _cols: [], _filterCols: [] };
     const named = ['folders', 'plans', 'projects', 'site_records', 'site_photos'];
     const bag = () => (named.includes(table) ? store[table] : store.rows);
     const setBag = v => { if (named.includes(table)) store[table] = v; else store.rows = v; };
     q._bag = bag; q._setBag = setBag;
 
     // .select() after .insert() means "give the row back", not a new query
-    q.select = function () { if (!q._op) q._op = 'select'; return q; };
+    q.select = function (cols) {
+      if (cols && cols !== '*') q._cols = String(cols).split(',').map(c => c.trim());
+      if (!q._op) q._op = 'select';
+      return q;
+    };
     q.limit = function () { return q; };
     q.is = function (c, v) { q._filters.push(r => (r[c] ?? null) === v); return q; };
     q.insert = function (p) { q._op = 'insert'; q._payload = p; return q; };
@@ -33,11 +41,22 @@
     q.order  = function () { return q; };
     q.gte = function (c, v) { q._filters.push(r => r[c] >= v); return q; };
     q.lte = function (c, v) { q._filters.push(r => r[c] <= v); return q; };
-    q.eq  = function (c, v) { q._filters.push(r => (r[c] ?? false) === v); return q; };
+    q.eq  = function (c, v) { q._filterCols.push(c); q._filters.push(r => (r[c] ?? false) === v); return q; };
     q.in  = function (c, vs) { q._filters.push(r => vs.includes(r[c])); return q; };
 
     q.then = function (resolve) {
       let result;
+      const absent = [...store.missingColumns].find(c =>
+        (q._op === 'insert' && q._payload && Object.prototype.hasOwnProperty.call(q._payload, c)) ||
+        (q._op === 'update' && q._payload && Object.prototype.hasOwnProperty.call(q._payload, c)) ||
+        q._cols.includes(c) || q._filterCols.includes(c));
+      if (absent) {
+        return Promise.resolve({ data: null, error: {
+          code: 'PGRST204',
+          message: "Could not find the '" + absent + "' column of '" + q.table
+                 + "' in the schema cache"
+        } }).then(resolve);
+      }
       if (store.missingTables.has(q.table)) {
         return Promise.resolve({ data: null, error: {
           code: 'PGRST205',

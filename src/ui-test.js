@@ -4070,6 +4070,607 @@ async function signIn(page) {
     await ctx.close();
   }
 
+
+  /* ====== PHASE 27 — a receipt is a receipt, with or without Gmail ======
+     The regression this guards against: the save wrote gmail_message_id and
+     gmail_attachment_id on EVERY receipt, so a photograph taken on site failed
+     with "Could not find the 'gmail_attachment_id' column of 'receipts' in the
+     schema cache" on any database that had not had the Gmail migration run.
+     Here the database deliberately does not have those columns at all. */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    await ctx.route('**/accounts.google.com/gsi/client', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stub */' }));
+
+    const B64 = PIXEL.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    await ctx.route('**/gmail.googleapis.com/**', route => {
+      const url = route.request().url();
+      const json = o => route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(o) });
+      if (/\/profile/.test(url)) return json({ emailAddress: 'finn@example.com' });
+      if (/\/attachments\//.test(url)) return json({ data: B64, size: PIXEL.length });
+      if (/\/messages\/mx/.test(url)) return json({
+        id: 'mx', snippet: 'Invoice attached.',
+        payload: { mimeType: 'multipart/mixed',
+          headers: [{ name: 'From', value: 'Jewson <no-reply@jewson.co.uk>' },
+                    { name: 'Subject', value: 'Invoice JW-777' },
+                    { name: 'Date', value: 'Thu, 10 Sep 2026 09:00:00 +0100' }],
+          parts: [{ mimeType: 'image/png', filename: 'jw-777.png',
+                    body: { attachmentId: 'att-x', size: 1024 } }] } });
+      if (/\/messages\?/.test(url)) return json({ messages: [{ id: 'mx' }] });
+      return json({});
+    });
+
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    const busyUp = () => page.evaluate(() =>
+      !document.querySelector('#busy').classList.contains('hide'));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      window.__gsi = { granted: true, revoked: [] };
+      window.google = { accounts: { oauth2: {
+        initTokenClient: cfg => ({ requestAccessToken: () => setTimeout(() =>
+          cfg.callback({ access_token: 'tok-x', expires_in: 3600 }), 40) }),
+        revoke: (t, cb) => { cb && cb(); }
+      } } };
+    });
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+
+    // the migration has not been run on this database
+    await page.evaluate(() => {
+      window.__mock.missingColumns.add('gmail_message_id');
+      window.__mock.missingColumns.add('gmail_attachment_id');
+    });
+
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    /* ---------- TEST 1: a normal receipt, on a database with no Gmail columns ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'Fixings from the merchant');
+    await page.fill('#f_amt', '25');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+
+    const normal = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.description === 'Fixings from the merchant'));
+    check('a camera receipt saves on a database that has no Gmail columns at all',
+      !!normal && normal.amount === 25, JSON.stringify(normal || null));
+    check('and the schema-cache error is gone',
+      !/schema cache/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+    check('the normal save does not mention Gmail at all',
+      !!normal && !('gmail_message_id' in normal) && !('gmail_attachment_id' in normal),
+      JSON.stringify(Object.keys(normal || {})));
+    check('no empty-string stand-in was invented for it either',
+      !!normal && normal.gmail_attachment_id === undefined,
+      JSON.stringify(normal && normal.gmail_attachment_id));
+    check('VAT is still the 20% default worked out from the total',
+      !!normal && normal.vat === 4.17 && normal.vat_rate === 20,
+      JSON.stringify(normal && { vat: normal.vat, rate: normal.vat_rate }));
+    check('it lands on the calendar and in Recently Added like any other',
+      /Fixings from the merchant/.test(await page.textContent('#recentlist')),
+      (await page.textContent('#recentlist')).slice(0, 160));
+    check('and in the month total',
+      Number((await page.textContent('#ttotal')).replace(/[^0-9.]/g, '')) >= 25,
+      await page.textContent('#ttotal'));
+    check('nothing is left covering the app', !(await busyUp()), 'still stuck on Saving');
+
+    /* ---------- editing and re-saving that receipt still works ---------- */
+    // straight to the edit screen: how you get there is covered elsewhere, what
+    // matters here is that re-saving an existing receipt still works
+    await page.evaluate(() => {
+      const r = window.__mock.rows.find(x => x.description === 'Fixings from the merchant');
+      if (r) openReceiptEdit(r);          // absent means the save above failed
+    });
+    await page.waitForTimeout(1400);
+    if (await page.isVisible('#f_amt')) {
+      await page.fill('#f_amt', '26');
+      await page.dispatchEvent('#f_amt', 'input');
+      await page.waitForTimeout(300);
+      await page.click('#e_save');
+      await page.waitForTimeout(2200);
+      if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+        await page.click('#askhost .btn-danger');
+        await page.waitForTimeout(1600);
+      }
+    }
+    check('an existing receipt still edits and re-saves',
+      await page.evaluate(() => window.__mock.rows.some(r =>
+        r.description === 'Fixings from the merchant' && r.amount === 26)),
+      JSON.stringify(await page.evaluate(() => window.__mock.rows.map(r => r.amount))));
+    await page.evaluate(() => closeSheet());
+    await page.waitForTimeout(600);
+
+    /* ---------- TEST 2: a Gmail receipt on the same un-migrated database ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(900);
+    await page.click('#gmconnect');
+    await page.waitForTimeout(3000);
+    await page.click('.emrow:has-text("Invoice JW-777")');
+    await page.waitForTimeout(1600);
+    await page.click('.ematt:has-text("jw-777.png") .emadd');
+    await page.waitForTimeout(3200);
+    check('a Gmail attachment still reaches the existing receipt form',
+      await page.isVisible('#f_amt') && (await page.inputValue('#f_date')) === '2026-09-10',
+      await page.inputValue('#f_date').catch(() => 'no form'));
+    await page.fill('#f_desc', 'Jewson invoice JW-777');
+    await page.fill('#f_amt', '310.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3000);
+    const imported = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.description === 'Jewson invoice JW-777'));
+    check('an import still saves even though the columns are not there',
+      !!imported && imported.amount === 310, JSON.stringify(imported || null));
+    check('and it says plainly that the link back to the email was not recorded',
+      /not recorded|Gmail columns/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+
+    /* ---------- TEST 2b: the same import once the migration has been run ---------- */
+    await page.evaluate(() => {
+      window.__mock.missingColumns.clear();          // sql/gmail-import-setup.sql has now been run
+    });
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(1200);
+    await page.click('.emrow:has-text("Invoice JW-777")');
+    await page.waitForTimeout(1600);
+    await page.click('.ematt:has-text("jw-777.png") .emadd');
+    await page.waitForTimeout(3200);
+    await page.fill('#f_desc', 'Jewson invoice, second copy');
+    await page.fill('#f_amt', '415.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3000);
+    const linked = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.description === 'Jewson invoice, second copy'));
+    check('with the columns in place the Gmail reference is kept',
+      !!linked && linked.gmail_message_id === 'mx' && linked.gmail_attachment_id === 'att-x',
+      JSON.stringify(linked && { m: linked.gmail_message_id, a: linked.gmail_attachment_id }));
+    check('and the receipt is otherwise an ordinary one',
+      !!linked && linked.amount === 415 && linked.vat_rate === 20 && linked.file_path,
+      JSON.stringify(linked && { a: linked.amount, r: linked.vat_rate }));
+
+    /* ---------- TEST 3: the duplicate warning is untouched by all this ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'Paid at the counter instead');
+    await page.fill('#f_amt', '310.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(1000);
+    check('a total matching an existing receipt warns as it is typed',
+      await page.isVisible('#f_dup') &&
+      /same total as an existing receipt/i.test(await page.textContent('#f_dup')),
+      (await page.textContent('#f_dup').catch(() => 'no panel')).slice(0, 160));
+    check('and the matching receipt can be inspected',
+      await page.isVisible('#f_dup .dupopen'), 'no way to inspect it');
+    const rowsBefore = await page.evaluate(() => window.__mock.rows.length);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(1400);
+    check('saving asks rather than refusing',
+      /possible duplicate/i.test(await page.textContent('#askhost').catch(() => '')),
+      (await page.textContent('#askhost').catch(() => 'no dialog')).slice(0, 140));
+    await page.click('#askhost .btn-ghost');
+    await page.waitForTimeout(1000);
+    check('Cancel leaves it unsaved and the form still there',
+      await page.evaluate(n => window.__mock.rows.length === n, rowsBefore) &&
+      await page.isVisible('#f_amt'), 'cancel did not hold');
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(1400);
+    await page.click('#askhost .btn-danger');
+    await page.waitForTimeout(2600);
+    check('Add anyway files the second one — two purchases can cost the same',
+      await page.evaluate(n => window.__mock.rows.length === n + 1, rowsBefore) &&
+      await page.evaluate(() => window.__mock.rows.filter(r => r.amount === 310).length === 2),
+      await page.evaluate(() => window.__mock.rows.filter(r => r.amount === 310).length));
+
+    check('no JS errors through either path', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 28 — the email list is not 25 emails long ======
+     100 messages behind four Gmail pages. The list only ever grows, the page
+     token carries on through the same result set, and a page that fails leaves
+     everything already on screen exactly where it was. */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/accounts.google.com/gsi/client', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stub */' }));
+
+    // e1 is the newest; Gmail hands them back newest first, 25 at a time
+    const PAGES = { '': 't2', t2: 't3', t3: 't4', t4: null };
+    const START = { '': 1, t2: 26, t3: 51, t4: 76 };
+    let failNext = false;
+    const listCalls = [];
+
+    await ctx.route('**/gmail.googleapis.com/**', route => {
+      const url = route.request().url();
+      const json = o => route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(o) });
+
+      if (/\/profile/.test(url)) return json({ emailAddress: 'finn@example.com' });
+
+      const one = url.match(/\/messages\/(e\d+)/);
+      if (one) {
+        const n = Number(one[1].slice(1));
+        return json({ id: one[1], snippet: 'Message number ' + n,
+          payload: { mimeType: 'multipart/mixed', headers: [
+            { name: 'From', value: 'Sender ' + n + ' <s' + n + '@example.com>' },
+            { name: 'Subject', value: 'Email number ' + n },
+            { name: 'Date', value: 'Tue, 8 Sep 2026 09:00:00 +0100' }] } });
+      }
+
+      if (/\/messages\?/.test(url)) {
+        if (failNext) { failNext = false;
+          return route.fulfill({ status: 500, contentType: 'application/json',
+            body: JSON.stringify({ error: { message: 'Backend error' } }) }); }
+        const tok = (url.match(/pageToken=([^&]*)/) || [, ''])[1];
+        listCalls.push(tok);
+        const from = START[tok];
+        if (from === undefined) return json({ messages: [] });
+        const messages = [];
+        for (let i = from; i < from + 25; i++) messages.push({ id: 'e' + i });
+        const next = PAGES[tok];
+        return json(next ? { messages, nextPageToken: next } : { messages });
+      }
+      return json({});
+    });
+
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      window.google = { accounts: { oauth2: {
+        initTokenClient: cfg => ({ requestAccessToken: () => setTimeout(() =>
+          cfg.callback({ access_token: 'tok-p', expires_in: 3600 }), 40) }),
+        revoke: (t, cb) => { cb && cb(); }
+      } } };
+    });
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    const rows = () => page.$$eval('#emlist .emrow', els => els.length);
+    const subjects = () => page.$$eval('#emlist .emsub', els => els.map(e => e.textContent));
+    // 25 messages are fetched one at a time, so wait for the list to reach the
+    // size being asked about rather than guessing at a sleep
+    // wait on the app's own "a page is in flight" flag rather than on a sleep or
+    // on a row count that is briefly true mid-append
+    const settle = async () => {
+      await page.waitForFunction(() => emailBusy === false, null, { timeout: 180000 })
+        .catch(() => { /* the check that follows reports what actually happened */ });
+      await page.waitForTimeout(350);
+    };
+    const waitRows = async () => settle();
+    const state = async () => JSON.stringify(await page.evaluate(() =>
+      ({ rows: document.querySelectorAll('#emlist .emrow').length,
+         list: emailList.length, token: emailToken, more: emailMore, busy: emailBusy,
+         foot: (document.querySelector('#emfoot') || {}).textContent })));
+    // Tap the button the way a finger does — one dispatched click. (Playwright's
+    // own click re-checks actionability and will retry when the handler disables
+    // the button underneath it, which would count as two taps.)
+    const tap = (times = 1) => page.evaluate(n => {
+      const b = document.querySelector('#emmore');
+      if (!b) return false;
+      for (let i = 0; i < n; i++) b.click();
+      return true;
+    }, times);
+    const loadMore = async () => {
+      await settle();
+      if (!await tap()) console.log('  [paging] no Load more button — ' + await state());
+    };
+
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(900);
+    await page.click('#gmconnect');
+    await page.waitForTimeout(1500);
+    await waitRows();
+
+    check('the first page is 25 emails', await rows() === 25, await rows());
+    check('and there is a clear way to get more',
+      await page.isVisible('#emmore') &&
+      /Load 25 more/.test(await page.textContent('#emmore')),
+      await page.textContent('#emmore').catch(() => 'no button'));
+    await page.evaluate(() => document.querySelector('#emfoot')
+      .scrollIntoView({ block: 'end' }));
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${ROOT}/n41-loadmore.png` });
+
+    /* ---------- 25 -> 50 -> 75 -> 100 ---------- */
+    const firstRowBefore = (await subjects())[0];
+    // read the button's state in the same breath as the tap: a small page can
+    // finish faster than any sleep
+    const tapped = await page.evaluate(() => {
+      const b = document.querySelector('#emmore');
+      b.click();
+      const seen = { disabled: b.disabled, text: b.textContent, busy: emailBusy };
+      b.click();                      // an impatient second tap, straight away
+      return seen;
+    });
+    check('the button says it is working and cannot be tapped again',
+      tapped.disabled && tapped.busy && /Loading/.test(tapped.text),
+      JSON.stringify(tapped));
+    await waitRows();
+    check('25 more are appended, not swapped in', await rows() === 50, await rows());
+    check('the emails that were already there have not moved',
+      (await subjects())[0] === firstRowBefore &&
+      (await subjects())[24] === 'Email number 25',
+      (await subjects()).slice(0, 2).join(' | '));
+    check('and an impatient second tap did not fetch the page twice',
+      await page.evaluate(() => emailList.length) === 50, await rows());
+
+    await loadMore();
+    await waitRows();
+    check('again: 75', await rows() === 75, await rows() + ' — ' + await state());
+    await loadMore();
+    await waitRows();
+    check('and again: 100', await rows() === 100, await rows() + ' — ' + await state());
+
+    const subs = await subjects();
+    check('no email appears twice',
+      new Set(subs).size === subs.length, subs.length - new Set(subs).size + ' repeated');
+    check('the Gmail ordering is kept, newest first and pages in order',
+      subs[0] === 'Email number 1' && subs[25] === 'Email number 26' &&
+      subs[50] === 'Email number 51' && subs[99] === 'Email number 100',
+      [subs[0], subs[25], subs[50], subs[99]].join(' | '));
+    check('each page was asked for with its own token, not the first page again',
+      JSON.stringify(listCalls) === JSON.stringify(['', 't2', 't3', 't4']),
+      JSON.stringify(listCalls));
+    check('with no more to come the button is gone, and it says so quietly',
+      !(await page.isVisible('#emmore').catch(() => false)) &&
+      /No more emails/.test(await page.textContent('#emend')),
+      await page.textContent('#emfoot').catch(() => 'no foot'));
+
+    /* ---------- refresh starts again from the newest 25 ---------- */
+    await page.click('#emrefresh');
+    await page.waitForTimeout(1500);
+    await settle();
+    check('Refresh goes back to the newest 25', await rows() === 25, await rows());
+    check('and the pagination starts over with it',
+      await page.isVisible('#emmore') &&
+      await page.evaluate(() => emailToken) === 't2',
+      JSON.stringify(await page.evaluate(() => emailToken)));
+    await loadMore();
+    await waitRows();
+    check('loading more still works after a refresh', await rows() === 50, await rows());
+
+    /* ---------- a page that fails loses nothing ---------- */
+    failNext = true;
+    await loadMore();
+    await page.waitForTimeout(2500);
+    await settle();
+    check('a failed page keeps every email already on screen',
+      await rows() === 50, await rows());
+    check('and says what went wrong',
+      (await page.textContent('#toast').catch(() => '')).length > 0,
+      await page.textContent('#toast').catch(() => 'no toast'));
+    check('the button comes back so it can simply be tried again',
+      await page.isVisible('#emmore') && !(await page.isDisabled('#emmore')),
+      'button did not return');
+    await loadMore();
+    await waitRows();
+    check('and trying again picks up exactly where it left off',
+      await rows() === 75 && (await subjects())[50] === 'Email number 51',
+      await rows() + ' / ' + (await subjects())[50]);
+
+    check('the screen is never left stuck on loading',
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')),
+      'stuck on loading');
+    check('no JS errors through the paging', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 29 — the polish is real, and it gets out of the way ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }));
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    const anim = sel => page.evaluate(s => {
+      const el = document.querySelector(s);
+      if (!el) return 'missing';
+      const c = getComputedStyle(el);
+      return c.animationName + ' ' + c.animationDuration;
+    }, sel);
+    const ms = v => Math.round(parseFloat(v) * (/ms$/.test(v) ? 1 : 1000));
+
+    /* ---------- moving between sections ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(600);
+    await page.click('#mplans');
+    await page.waitForTimeout(120);
+    const planAnim = await anim('#plan');
+    check('a section fades and slides in rather than snapping',
+      /sectin/.test(planAnim), planAnim);
+    check('and the transition is short, not a slow wipe',
+      ms(planAnim.split(' ')[1]) >= 150 && ms(planAnim.split(' ')[1]) <= 300, planAnim);
+    await page.waitForTimeout(600);
+    check('Planning still opens as its own page',
+      await page.isVisible('#plan') && !(await page.isVisible('#app')), 'planning did not open');
+    await page.click('#planback');
+    await page.waitForTimeout(700);
+    check('and going back still lands on the calendar',
+      await page.isVisible('#app') && !(await page.isVisible('#plan')), 'did not go back');
+
+    /* ---------- a tap is felt ---------- */
+    const press = await page.evaluate(() => {
+      const b = document.querySelector('.bar .btn-primary') || document.querySelector('.btn');
+      const c = getComputedStyle(b);
+      return { transition: c.transitionProperty + ' ' + c.transitionDuration,
+               cls: b.className };
+    });
+    check('buttons have a quick press transition, on transform not on layout',
+      /transform/.test(press.transition) && !/width|height|margin/.test(press.transition),
+      JSON.stringify(press));
+
+    /* ---------- bottom sheets ---------- */
+    await page.evaluate(() => openDay(ymd(new Date())));
+    await page.waitForTimeout(700);
+    check('a sheet slides up from the bottom',
+      /up|fade/.test(await anim('.sheet')), await anim('.sheet'));
+    await page.evaluate(() => closeSheet());
+    await page.waitForTimeout(60);
+    check('and plays itself out on the way down instead of vanishing',
+      await page.evaluate(() => !!document.querySelector('.scrim.closing')),
+      'no closing state');
+    check('a sheet on its way out cannot be tapped through',
+      await page.evaluate(() => {
+        const s = document.querySelector('.scrim.closing');
+        return !s || getComputedStyle(s).pointerEvents === 'none';
+      }), 'still interactive while closing');
+    await page.waitForTimeout(700);
+    check('and it is properly gone afterwards',
+      await page.evaluate(() => document.querySelector('#sheets').children.length === 0),
+      await page.evaluate(() => document.querySelector('#sheets').innerHTML.length));
+
+    /* ---------- the new receipt sheet is untouched underneath it all ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    check('New receipt still has exactly the fields it had',
+      await page.isVisible('#f_desc') && await page.isVisible('#f_amt') &&
+      await page.isVisible('#f_vat') && await page.isVisible('#f_rate') &&
+      await page.isVisible('#f_net') && await page.isVisible('#f_date') &&
+      await page.isVisible('#f_folderpick'), 'a field is missing');
+    await page.fill('#f_desc', 'Polish check');
+    await page.fill('#f_amt', '48');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    check('and its VAT arithmetic is the same 20% as ever',
+      (await page.inputValue('#f_vat')) === '8.00' &&
+      (await page.inputValue('#f_rate')) === '20', await page.inputValue('#f_vat'));
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(2000);
+    }
+    check('a receipt still saves with the animations in',
+      await page.evaluate(() => window.__mock.rows.some(r => r.description === 'Polish check')),
+      'not saved');
+    check('and nothing is left covering the app',
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')) &&
+      await page.evaluate(() => document.querySelector('#sheets').children.length === 0),
+      'something is still up');
+    await page.screenshot({ path: `${ROOT}/n42-polished.png` });
+    check('no JS errors with the polish in', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+  /* ====== PHASE 30 — someone who has asked their phone for less motion ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+      reducedMotion: 'reduce',
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }));
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    check('the app knows the setting is on',
+      await page.evaluate(() => reducedMotion() === true),
+      await page.evaluate(() => reducedMotion()));
+    check('and the movement is switched off rather than merely shortened in feel',
+      await page.evaluate(() => {
+        const c = getComputedStyle(document.querySelector('#app'));
+        return parseFloat(c.animationDuration) < 0.05;
+      }), await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#app')).animationDuration));
+
+    await page.evaluate(() => openDay(ymd(new Date())));
+    await page.waitForTimeout(600);
+    check('a sheet still opens', await page.isVisible('.sheet'), 'no sheet');
+    await page.evaluate(() => closeSheet());
+    await page.waitForTimeout(120);
+    check('and closes immediately, with no animation to sit through',
+      await page.evaluate(() => document.querySelector('#sheets').children.length === 0),
+      await page.evaluate(() => document.querySelector('#sheets').children.length));
+
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'Reduced motion receipt');
+    await page.fill('#f_amt', '31');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(2000);
+    }
+    check('and the whole receipt flow works exactly the same',
+      await page.evaluate(() =>
+        window.__mock.rows.some(r => r.description === 'Reduced motion receipt')),
+      'not saved');
+    check('no JS errors with motion reduced', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
   console.log('\n=== PASS (' + pass.length + ') ===');
   pass.forEach(p => console.log('  ✓ ' + p));
   if (fail.length) {
