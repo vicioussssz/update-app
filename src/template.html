@@ -166,6 +166,12 @@ main{flex:1;padding:16px 12px 0}
   border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);
   transform:rotate(-45deg)}
 .rechead:active h3,.rechead:active .chev{opacity:.55}
+.rechrow{display:flex;align-items:center;gap:8px}
+.rechrow .rechead{flex:1;min-width:0}
+.recsort{display:flex;align-items:center;gap:5px;flex:none;padding:0 16px 8px;
+  font-size:12px;font-weight:600;letter-spacing:.03em;color:var(--accent);
+  transition:opacity .13s ease}
+.recsort:active{opacity:.55}
 
 /* ---------- bottom bar ---------- */
 .bar{position:sticky;bottom:0;z-index:20;display:flex;gap:10px;
@@ -940,10 +946,18 @@ main{flex:1;padding:16px 12px 0}
     </div>
     <div class="grid" id="grid"></div>
     <section id="recent">
-      <button id="recenthead" class="rechead">
-        <h3>Recently Added</h3>
-        <span class="chev"></span>
-      </button>
+      <div class="rechrow">
+        <button id="recenthead" class="rechead">
+          <h3>Recently Added</h3>
+          <span class="chev"></span>
+        </button>
+        <button id="recentsort" class="recsort" aria-label="Sort receipts">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
+          <span id="recentsortlbl">Newest</span>
+        </button>
+      </div>
       <div class="rlist" id="recentlist"></div>
     </section>
   </main>
@@ -1431,17 +1445,86 @@ function renderTotals() {
   $('#ttotal').textContent = money(s.total);
 }
 
+/* ---------- how Recently Added is ordered ----------
+   Four ways of looking at the same receipts. Nothing is rewritten and nothing
+   is refetched: this only decides the order they are drawn in. The choice is
+   remembered between visits. */
+const SORTS = {
+  new:  { label: 'Newest',  group: 'Date',   what: 'Newest first' },
+  old:  { label: 'Oldest',  group: 'Date',   what: 'Oldest first' },
+  high: { label: 'Highest', group: 'Amount', what: 'Highest first' },
+  low:  { label: 'Lowest',  group: 'Amount', what: 'Lowest first' }
+};
+
+let recentSort = (() => {
+  try { return SORTS[localStorage.getItem('recentSort')] ? localStorage.getItem('recentSort') : 'new'; }
+  catch { return 'new'; }
+})();
+
+/* A receipt with no total sorts to the end whichever way amount is pointing —
+   an unknown figure is not a small one. Ties fall back to when it was added, so
+   the same list always comes out in the same order. */
+function sortReceipts(list, how) {
+  const added = r => String(r.created_at || '');
+  const amt = r => (r.amount === null || r.amount === undefined) ? null : Number(r.amount);
+  const out = [...list];
+  out.sort((a, b) => {
+    if (how === 'old')  return added(a).localeCompare(added(b)) || String(a.id).localeCompare(String(b.id));
+    if (how === 'high' || how === 'low') {
+      const x = amt(a), y = amt(b);
+      if (x === null && y === null) return added(b).localeCompare(added(a));
+      if (x === null) return 1;
+      if (y === null) return -1;
+      if (x !== y) return how === 'high' ? y - x : x - y;
+      return added(b).localeCompare(added(a));
+    }
+    return added(b).localeCompare(added(a)) || String(b.id).localeCompare(String(a.id));
+  });
+  return out;
+}
+
+function setRecentSort(how) {
+  if (!SORTS[how]) return;
+  recentSort = how;
+  try { localStorage.setItem('recentSort', how); } catch { /* fine without it */ }
+  renderRecent();
+}
+
+function openSortMenu() {
+  const opt = key => el('button', {
+    class: 'ditem' + (recentSort === key ? ' on' : ''), id: 'sort_' + key,
+    onclick: () => { setRecentSort(key); closeSheet(); } }, [
+    el('span', { class: 'lbl', text: SORTS[key].what })
+  ]);
+  sheet({
+    title: 'Sort by',
+    body: [
+      el('div', { class: 'grp' }, [
+        el('h4', { text: 'Date' }),
+        el('div', { class: 'card' }, [opt('new'), opt('old')]),
+        el('p', { class: 'hintline', text: 'By when the receipt was added.' })
+      ]),
+      el('div', { class: 'grp' }, [
+        el('h4', { text: 'Amount' }),
+        el('div', { class: 'card' }, [opt('high'), opt('low')]),
+        el('p', { class: 'hintline', text: "The receipt's total." })
+      ])
+    ]
+  });
+}
+
 function renderRecent() {
   const box = $('#recent'), list = $('#recentlist');
   // the header is the way into the full list, so this section is always here,
   // even in a month with nothing in it yet
   box.classList.remove('hide');
   $('#recenthead').onclick = openRecent;
-  const latest = [...rows]
-    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
-    .slice(0, 4);
+  $('#recentsort').onclick = openSortMenu;
+  $('#recentsortlbl').textContent = SORTS[recentSort].label;
+
+  const latest = sortReceipts(rows, recentSort).slice(0, 4);
   list.innerHTML = '';
-  if (latest.length) latest.forEach(r => list.appendChild(receiptRow(r, true)));
+  if (latest.length) latest.forEach(r => list.appendChild(receiptRow(r, true, renderRecent)));
   else list.appendChild(el('p', { class: 'empty',
     text: 'Nothing added this month yet — tap to see everything.' }));
 }
@@ -2064,10 +2147,16 @@ async function openRecent() {
   await loadFolders();
   let list;
   try {
+    // the order is asked for up front so the 60 that come back are the right 60,
+    // then applied again below so the list reads the same whatever the server did
+    const byAmount = recentSort === 'high' || recentSort === 'low';
     const res = await db.from('receipts').select('*')
-      .order('created_at', { ascending: false }).limit(60);
+      .order(byAmount ? 'amount' : 'created_at',
+             { ascending: recentSort === 'old' || recentSort === 'low',
+               nullsFirst: false })
+      .limit(60);
     if (res.error) throw res.error;
-    list = res.data || [];
+    list = sortReceipts(res.data || [], recentSort);
   } catch (e) { busy(false); toast(niceError(e), true); return; }
   busy(false);
 
@@ -2104,7 +2193,14 @@ async function openRecent() {
   const card = sheet({
     title: 'Recently added',
     sub: list.length ? String(list.length) : '',
-    body: [ list.length ? body : el('p', { class: 'empty', text: 'Nothing filed yet.' }) ]
+    body: [
+      el('button', { class: 'recsort', id: 'recentsort2',
+        onclick: () => { closeSheet(); openSortMenu(); } }, [
+        el('span', { text: 'Sorted by ' + SORTS[recentSort].what.toLowerCase() }),
+        el('span', { class: 'chev' })
+      ]),
+      list.length ? body : el('p', { class: 'empty', text: 'Nothing filed yet.' })
+    ]
   });
   card.appendChild(foot);
   rebuild();
@@ -4498,15 +4594,13 @@ function openSettings() {
 const CLOSE_MS = 180;
 function closeSheet() {
   const host = $('#sheets');
-  const scrim = host.querySelector('.scrim');
-  if (!scrim || reducedMotion()) { host.innerHTML = ''; return; }
+  // the one on top, not the one underneath: a receipt opened from a day view
+  // sits above it, and closing must take the receipt away, not the day
+  const scrim = host.lastElementChild;
+  if (!scrim || reducedMotion()) { if (scrim) scrim.remove(); return; }
   scrim.classList.add('closing');
   scrim.style.pointerEvents = 'none';
-  setTimeout(() => {
-    // only clear what was closing: another sheet may have opened in the meantime
-    if (scrim.parentNode === host && host.children.length === 1) host.innerHTML = '';
-    else scrim.remove();
-  }, CLOSE_MS);
+  setTimeout(() => scrim.remove(), CLOSE_MS);
 }
 
 const reducedMotion = () => {
@@ -4569,9 +4663,15 @@ function openDay(dateStr) {
   const list = byDay().get(dateStr) || [];
   const total = list.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
+  // Editing one of these changes the day itself — a different total, or one
+  // receipt fewer if its date moved — so when the editor closes the day is put
+  // back up as it now stands, rather than as it was.
+  const again = () => openDay(dateStr);
+
   const body = list.length
-    ? [el('div', { class: 'rlist' }, list.map(receiptRow))]
-    : [el('p', { class: 'empty', text: 'Nothing filed on this day yet.' })];
+    ? [el('div', { class: 'rlist', id: 'dayblock' },
+        list.map(r => receiptRow(r, false, again)))]
+    : [el('p', { class: 'empty', id: 'dayblock', text: 'Nothing filed on this day yet.' })];
 
   sheet({
     title: prettyDate(dateStr),
@@ -4585,7 +4685,7 @@ function openDay(dateStr) {
   signThumbs();
 }
 
-function receiptRow(r, showDate) {
+function receiptRow(r, showDate, onSaved) {
   const isPdf = r.file_type === 'application/pdf';
   const thumb = r.image_cleared
     ? el('div', { class: 'thumb gone', text: 'CLEARED' })
@@ -4597,7 +4697,9 @@ function receiptRow(r, showDate) {
   const meta = showDate
     ? prettyDate(r.receipt_date)
     : (r.uploader_name || '');
-  return el('button', { class: 'rrow', onclick: () => openReceipt(r) }, [
+  // the same editor as everywhere else — the picture is still one tap away
+  // inside it, so nothing has been taken off the read-only view
+  return el('button', { class: 'rrow', onclick: () => openReceiptEdit(r, onSaved) }, [
     thumb,
     el('div', { class: 'rmeta' }, [
       el('b',    { text: r.description || 'Receipt' }),
@@ -5563,7 +5665,7 @@ async function handlePicked(file) {
 
 /* Editing a receipt that is already filed. Same fields, same VAT arithmetic,
    same folder picker as adding one — only the picture and the save differ. */
-async function openReceiptEdit(r) {
+async function openReceiptEdit(r, onSaved) {
   await loadFolders();
 
   const F = receiptFieldSet({
@@ -5631,9 +5733,16 @@ async function openReceiptEdit(r) {
         folder_id: F.folder() || null
       }).eq('id', r.id);
       if (res.error) throw res.error;
+
+      // moved to another month? then that is the month to be looking at
+      const moved = new Date(F.date.value + 'T12:00:00');
+      if (moved.getMonth() !== view.getMonth() ||
+          moved.getFullYear() !== view.getFullYear()) view = moved;
+
       await loadMonth();
       busy(false); save.disabled = false;
       closeSheet();
+      if (onSaved) onSaved();          // whatever list this came from, repainted
       toast('Receipt updated');
     } catch (e) {
       busy(false); save.disabled = false;

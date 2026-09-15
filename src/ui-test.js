@@ -5004,6 +5004,279 @@ async function signIn(page) {
     await ctx.close();
   }
 
+
+  /* ====== PHASE 32 — one editor everywhere, and a sorted Recently Added ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }));
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+
+    // four receipts on one day, added in a known order, with known totals
+    await page.evaluate(() => {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      const today = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(15)}`;
+      window.__day = today;
+      window.__mock.folders.push({ id: 'f-oak', name: 'Oakwood', created_at: '2026-01-01T09:00:00Z' });
+      window.__mock.rows.push(
+        { id: 'a1', receipt_date: today, description: 'Sand', amount: 30, vat: 5,
+          vat_rate: 20, folder_id: null, file_path: 'p/a1.jpg', file_type: 'image/jpeg',
+          image_cleared: false, uploader_name: 'finn@x.com', created_at: '2026-02-01T09:00:00Z' },
+        { id: 'a2', receipt_date: today, description: 'Cement', amount: 90, vat: 15,
+          vat_rate: 20, folder_id: null, file_path: 'p/a2.jpg', file_type: 'image/jpeg',
+          image_cleared: false, uploader_name: 'finn@x.com', created_at: '2026-02-02T09:00:00Z' },
+        { id: 'a3', receipt_date: today, description: 'Blocks', amount: 15, vat: 2.5,
+          vat_rate: 20, folder_id: null, file_path: 'p/a3.jpg', file_type: 'image/jpeg',
+          image_cleared: false, uploader_name: 'finn@x.com', created_at: '2026-02-03T09:00:00Z' },
+        { id: 'a4', receipt_date: today, description: 'No total on this one', amount: null,
+          vat: null, vat_rate: null, folder_id: null, file_path: 'p/a4.jpg',
+          file_type: 'image/jpeg', image_cleared: false, uploader_name: 'finn@x.com',
+          created_at: '2026-02-04T09:00:00Z' });
+    });
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1800);
+
+    const rowCount = () => page.evaluate(() => window.__mock.rows.length);
+    const startRows = await rowCount();
+
+    /* ---------- opening a receipt from the calendar ---------- */
+    await page.evaluate(() => openDay(window.__day));
+    await page.waitForTimeout(900);
+    check('a day in the calendar lists what was filed on it',
+      (await page.$$('#dayblock .rrow')).length === 4, (await page.$$('#dayblock .rrow')).length);
+    await page.click('#dayblock .rrow:has-text("Cement")');
+    await page.waitForTimeout(1200);
+    check('opening one from the calendar gives the editor, not a read-only view',
+      (await page.textContent('.shead h3')) === 'Edit receipt',
+      await page.textContent('.shead h3').catch(() => 'none'));
+    check('with every field editable',
+      await page.isVisible('#f_desc') && await page.isVisible('#f_amt') &&
+      await page.isVisible('#f_vat') && await page.isVisible('#f_rate') &&
+      await page.isVisible('#f_date') && await page.isVisible('#f_folderpick'),
+      'a field is missing');
+    check('showing the figures already on the receipt',
+      (await page.inputValue('#f_amt')) === '90.00' &&
+      (await page.inputValue('#f_vat')) === '15.00' &&
+      (await page.inputValue('#f_rate')) === '20',
+      await page.inputValue('#f_amt') + ' / ' + await page.inputValue('#f_vat'));
+    await page.screenshot({ path: `${ROOT}/n44-calendar-edit.png` });
+
+    /* ---------- changing the total ---------- */
+    await page.fill('#f_amt', '200');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    check('the existing VAT arithmetic still runs on it',
+      (await page.inputValue('#f_vat')) === '33.33', await page.inputValue('#f_vat'));
+    await page.click('#e_save');
+    await page.waitForTimeout(2400);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1800);
+    }
+    check('it updates the receipt that was already there',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a2') || {}).amount) === 200,
+      JSON.stringify(await page.evaluate(() =>
+        window.__mock.rows.map(r => [r.id, r.amount]))));
+    check('and creates no second copy of it',
+      await rowCount() === startRows, await rowCount());
+    check('its picture is still attached',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a2') || {}).file_path) === 'p/a2.jpg',
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a2') || {}).file_path)));
+
+    check('the day is put back up, redrawn with the new figure',
+      await page.isVisible('#dayblock') &&
+      /£200/.test(await page.textContent('#dayblock')),
+      (await page.textContent('#dayblock').catch(() => 'gone')).slice(0, 120));
+    check('and the month total has moved with it',
+      Number((await page.textContent('#ttotal')).replace(/[^0-9.]/g, '')) >= 245,
+      await page.textContent('#ttotal'));
+
+    /* ---------- changing the folder ---------- */
+    await page.click('#dayblock .rrow:has-text("Sand")');
+    await page.waitForTimeout(1200);
+    check('the folder it is in now is shown',
+      /None/.test(await page.textContent('#f_folderpick')),
+      await page.textContent('#f_folderpick'));
+    await page.click('#f_folderpick');
+    await page.waitForTimeout(700);
+    check('and the existing folders are offered, with a way to unfile it',
+      /Oakwood/.test(await page.textContent('#pickhost')) &&
+      /None/.test(await page.textContent('#pickhost')) &&
+      /New folder/.test(await page.textContent('#pickhost')),
+      (await page.textContent('#pickhost')).slice(0, 140));
+    await page.click('#pickhost .ditem:has-text("Oakwood")');
+    await page.waitForTimeout(600);
+    check('choosing one shows it on the form',
+      /Oakwood/.test(await page.textContent('#f_folderpick')),
+      await page.textContent('#f_folderpick'));
+    await page.click('#e_save');
+    await page.waitForTimeout(2400);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1800);
+    }
+    check('and saving files it there',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a1') || {}).folder_id) === 'f-oak',
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a1') || {}).folder_id)));
+
+    /* ---------- changing the date moves it off the day ---------- */
+    await page.click('#dayblock .rrow:has-text("Blocks")');
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      document.querySelector('#f_date').value =
+        `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(16)}`;
+    });
+    await page.click('#e_save');
+    await page.waitForTimeout(2400);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1800);
+    }
+    check('moving a receipt to another day takes it off the one it was on',
+      !/Blocks/.test(await page.textContent('#dayblock')) &&
+      (await page.$$('#dayblock .rrow')).length === 3,
+      (await page.$$('#dayblock .rrow')).length);
+    check('and it is on the day it went to',
+      await page.evaluate(() =>
+        String((window.__mock.rows.find(r => r.id === 'a3') || {}).receipt_date).endsWith('-16')),
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a3') || {}).receipt_date)));
+    await page.evaluate(() => closeSheet());
+    await page.waitForTimeout(700);
+
+    /* ---------- sorting Recently Added ---------- */
+    const strip = () => page.$$eval('#recentlist .rrow b', els => els.map(e => e.textContent));
+    check('Recently Added has a sort control, showing how it is ordered',
+      await page.isVisible('#recentsort') &&
+      (await page.textContent('#recentsortlbl')) === 'Newest',
+      await page.textContent('#recentsortlbl').catch(() => 'none'));
+    check('and it starts newest-added first',
+      (await strip())[0] === 'No total on this one', JSON.stringify(await strip()));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    const menu = await page.textContent('.sbody');
+    check('the menu offers date and amount, and says which date it means',
+      /Newest first/.test(menu) && /Oldest first/.test(menu) &&
+      /Highest first/.test(menu) && /Lowest first/.test(menu) &&
+      /when the receipt was added/i.test(menu), menu.slice(0, 200));
+    check('with the current choice marked',
+      await page.evaluate(() =>
+        document.querySelector('#sort_new').classList.contains('on')), 'not marked');
+    await page.screenshot({ path: `${ROOT}/n45-sort.png` });
+
+    await page.click('#sort_old');
+    await page.waitForTimeout(900);
+    check('oldest first reverses it, straight away',
+      (await strip())[0] === 'Sand' && (await page.textContent('#recentsortlbl')) === 'Oldest',
+      JSON.stringify(await strip()));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_high');
+    await page.waitForTimeout(900);
+    check('highest amount first orders by the total',
+      (await strip())[0] === 'Cement' && (await strip())[1] === 'Sand' &&
+      (await strip())[2] === 'Blocks',
+      JSON.stringify(await strip()));
+    check('and a receipt with no total goes last, not first',
+      (await strip()).slice(-1)[0] === 'No total on this one', JSON.stringify(await strip()));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_low');
+    await page.waitForTimeout(900);
+    check('lowest first turns it round',
+      (await strip())[0] === 'Blocks' && (await strip())[1] === 'Sand' &&
+      (await strip())[2] === 'Cement',
+      JSON.stringify(await strip()));
+    check('a missing total still sorts last, not as a zero',
+      (await strip()).slice(-1)[0] === 'No total on this one', JSON.stringify(await strip()));
+
+    check('sorting changed the order and nothing else',
+      await page.evaluate(() => {
+        const r = window.__mock.rows;
+        const a1 = r.find(x => x.id === 'a1'), a2 = r.find(x => x.id === 'a2');
+        return r.length === 4 && a1.amount === 30 && a2.amount === 200 &&
+               a1.description === 'Sand';
+      }), JSON.stringify(await page.evaluate(() =>
+        window.__mock.rows.map(r => [r.id, r.amount]))));
+
+    check('the choice is written down so it survives closing the app',
+      await page.evaluate(() => { try { return localStorage.getItem('recentSort'); }
+                                  catch { return 'unavailable'; } }) === 'low',
+      await page.evaluate(() => { try { return localStorage.getItem('recentSort'); }
+                                  catch { return 'unavailable'; } }));
+
+    /* ---------- the full list follows the same order ---------- */
+    await page.click('#recenthead');
+    await page.waitForTimeout(1600);
+    check('the full Recently Added list says how it is sorted',
+      /Sorted by lowest first/i.test(await page.textContent('#recentsort2')),
+      await page.textContent('#recentsort2').catch(() => 'none'));
+    check('and opening a receipt from it is the same editor',
+      await (async () => {
+        await page.click('.rclist .rcmeta');
+        await page.waitForTimeout(1200);
+        return (await page.textContent('.shead h3')) === 'Edit receipt';
+      })(), await page.textContent('.shead h3').catch(() => 'none'));
+    await page.evaluate(() => { closeSheet(); closeSheet(); });
+    await page.waitForTimeout(800);
+
+    /* ---------- nothing else disturbed ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'Still works');
+    await page.fill('#f_amt', '12');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    check('a brand new receipt still works out its VAT the same way',
+      (await page.inputValue('#f_vat')) === '2.00', await page.inputValue('#f_vat'));
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1800);
+    }
+    check('and still saves',
+      await page.evaluate(() => window.__mock.rows.some(r => r.description === 'Still works')),
+      'not saved');
+
+    /* ---------- and it is still that way after a restart ---------- */
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1200);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(2200);
+    check('the sort choice is still there after closing and reopening the app',
+      (await page.textContent('#recentsortlbl')) === 'Lowest',
+      await page.textContent('#recentsortlbl').catch(() => 'none'));
+
+    check('no JS errors through any of it', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
   console.log('\n=== PASS (' + pass.length + ') ===');
   pass.forEach(p => console.log('  ✓ ' + p));
   if (fail.length) {
