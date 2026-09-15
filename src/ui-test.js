@@ -918,7 +918,7 @@ async function signIn(page) {
     check('the confirm box no longer calls VAT unknown',
       !/VAT: unknown/i.test(box), JSON.stringify(box.slice(0, 220)));
     check('it says VAT comes from the rate, not from the picture',
-      /not read off the picture/i.test(box), JSON.stringify(box.slice(0, 260)));
+      /never read off the receipt/i.test(box), JSON.stringify(box.slice(0, 260)));
     check('the reader reports only the date and the total',
       !/\bVAT £|\bNet\b|Supplier/i.test(box), JSON.stringify(box.slice(0, 260)));
 
@@ -1113,17 +1113,22 @@ async function signIn(page) {
     await page.waitForTimeout(1200);
     check('recently added opens', (await page.textContent('.shead h3')) === 'Recently added',
       await page.textContent('.shead h3').catch(() => 'none'));
-    const first = await page.textContent('.rcrow:first-child');
+    const timberRow = await page.textContent('.rcrow:has-text("Timber")');
     check('it shows what the receipt is for, the date and the folder',
-      /Timber/.test(first) && /Unfiled/.test(first), JSON.stringify(first));
+      /Timber/.test(timberRow) && /Unfiled/.test(timberRow), JSON.stringify(timberRow));
     check('it shows the total and the VAT',
-      /£120\.00/.test(first) && /VAT £20\.00/.test(first), JSON.stringify(first));
+      /£120\.00/.test(timberRow) && /VAT £20\.00/.test(timberRow), JSON.stringify(timberRow));
     check('a receipt with no VAT says unknown rather than zero',
       /VAT unknown/.test(await page.textContent('.rclist')), 'no unknown label');
-    check('newest is listed first', /Timber/.test(first), JSON.stringify(first));
+    // the default order is by the date on the receipt: Stamps is the 6th,
+    // Lunch the 5th, Timber the 4th — whatever order they were uploaded in
+    check('the latest receipt date is listed first',
+      /Stamps/.test(await page.textContent('.rcrow:first-child')),
+      JSON.stringify(await page.textContent('.rcrow:first-child')));
 
-    await page.click('.rcrow:nth-child(1) .pick');
-    await page.click('.rcrow:nth-child(2) .pick');
+    // pick them by name, so the order they are listed in cannot change what moves
+    await page.click('.rcrow:has-text("Timber") .pick');
+    await page.click('.rcrow:has-text("Lunch with client") .pick');
     await page.waitForTimeout(400);
     check('selecting shows how many will move',
       /Move 2/.test(await page.textContent('.recentfoot')),
@@ -2707,14 +2712,23 @@ async function signIn(page) {
       await page.fill('#f_desc', 'Repeat run ' + i);
       await page.fill('#f_amt', '60');
       await page.dispatchEvent('#f_amt', 'input');
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(900);
+      // nothing to do with Gmail: a total typed in by hand gets the same check
+      if (i > 1) check(`run ${i} of 3: a hand-typed total is checked too`,
+        await page.isVisible('#f_dup') &&
+        /same total as an existing receipt/i.test(await page.textContent('#f_dup')),
+        (await page.textContent('#f_dup').catch(() => 'no panel')).slice(0, 140));
       await page.click('.sfoot .btn-primary');
-      await page.waitForTimeout(2200);
+      await page.waitForTimeout(1000);
+      // runs 2 and 3 are £60 again, so the possible-duplicate warning is expected:
+      // three £60 receipts on the same day are still three receipts
+      const warned = await page.evaluate(() => !!document.querySelector('#askhost'));
+      if (i > 1) check(`run ${i} of 3: a repeated total is queried, not refused`,
+        warned && /possible duplicate/i.test(await page.textContent('#askhost')),
+        warned ? (await page.textContent('#askhost')).slice(0, 120) : 'no warning');
+      if (warned) { await page.click('#askhost .btn-danger'); await page.waitForTimeout(800); }
+      await page.waitForTimeout(1800);
       const stuck = await busyUp();
-      if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
-        await page.click('#askhost .btn-ghost');
-        await page.waitForTimeout(700);
-      }
       check(`run ${i} of 3: saves and clears the saving screen`,
         !stuck && await page.evaluate(n =>
           window.__mock.rows.some(r => r.description === 'Repeat run ' + n), i),
@@ -3488,6 +3502,2103 @@ async function signIn(page) {
     await ctx.close();
   }
 
+
+  /* ====== PHASE 26 — Gmail import ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+
+    // Google's sign-in library is never loaded in the test; the token client is
+    // stubbed so the flow can be exercised without a real Google account.
+    await ctx.route('**/accounts.google.com/gsi/client', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stub */' }));
+
+    const B64 = PIXEL.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const msg = (id, from, subject, date, parts) => ({
+      id, snippet: 'Please find attached.',
+      payload: {
+        mimeType: 'multipart/mixed',
+        headers: [{ name: 'From', value: from }, { name: 'Subject', value: subject },
+                  { name: 'Date', value: date }],
+        parts
+      }
+    });
+    const textPart = t => ({ mimeType: 'text/plain', body: { data:
+      Buffer.from(t).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') } });
+    const filePart = (name, mime, aid) =>
+      ({ mimeType: mime, filename: name, body: { attachmentId: aid, size: 2048 } });
+
+    const MESSAGES = {
+      m1: msg('m1', '"Travis Perkins" <invoices@travisperkins.co.uk>',
+              'Invoice INV-9001', 'Tue, 8 Sep 2026 09:14:00 +0100',
+              [textPart('Your invoice is attached.\nTotal due £1,245.60'),
+               filePart('invoice-9001.pdf', 'application/pdf', 'att-1'),
+               filePart('terms.docx',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'att-2')]),
+      m2: msg('m2', 'Jewson <no-reply@jewson.co.uk>', 'Statement September',
+              'Mon, 7 Sep 2026 16:02:00 +0100',
+              [textPart('Statement attached.'),
+               filePart('statement.png', 'image/png', 'att-3')]),
+      m3: msg('m3', 'Someone <hi@example.com>', 'Just a note',
+              'Sun, 6 Sep 2026 11:00:00 +0100', [textPart('No attachment on this one.')]),
+      // never imported, so the invoice-number check is what gets tested below
+      m4: msg('m4', 'Travis Perkins <invoices@travisperkins.co.uk>', 'Credit note',
+              'Fri, 4 Sep 2026 10:00:00 +0100',
+              [textPart('Credit note attached.'),
+               filePart('credit-note.pdf', 'application/pdf', 'att-4')])
+    };
+
+    let gmailDown = false;
+    await ctx.route('**/gmail.googleapis.com/**', route => {
+      const url = route.request().url();
+      if (gmailDown) return route.fulfill({ status: 401, contentType: 'application/json',
+        body: JSON.stringify({ error: { message: 'Invalid Credentials' } }) });
+      const json = o => route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(o) });
+      if (/\/profile/.test(url)) return json({ emailAddress: 'finn@example.com' });
+      if (/\/attachments\//.test(url)) return json({ data: B64, size: PIXEL.length });
+      const m = url.match(/\/messages\/(m\d)/);
+      if (m) return json(MESSAGES[m[1]]);
+      if (/\/messages\?/.test(url))
+        return json({ messages: [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }, { id: 'm4' }] });
+      return json({});
+    });
+
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      window.__gsi = { granted: true, revoked: [] };
+      window.google = { accounts: { oauth2: {
+        initTokenClient: cfg => ({
+          requestAccessToken: () => setTimeout(() => {
+            window.__gsi.scope = cfg.scope;
+            if (window.__gsi.granted) cfg.callback({ access_token: 'tok-123', expires_in: 3600 });
+            else cfg.error_callback({ type: 'popup_closed' });
+          }, 40)
+        }),
+        revoke: (t, cb) => { window.__gsi.revoked.push(t); cb && cb(); }
+      } } };
+
+      /* pdf.js stands in for the real library, which cannot be fetched in here.
+         Only the four calls the app actually makes are provided, so the stub
+         cannot quietly drift away from what the app relies on:
+           getDocument({data}).promise -> { numPages, getPage }
+           page.getViewport({scale})   -> { width, height }
+           page.render({canvasContext, viewport}).promise
+           page.getTextContent()       -> { items: [{ str, hasEOL }] }  */
+      window.__pdf = {
+        pages: 3,
+        text: 'TRAVIS PERKINS LTD\nInvoice No INV-9001\nVAT registration 123 4567 89\n'
+            + 'Goods 1038.00\nVAT at 20% 207.60\nTotal due £1,245.60',
+        rendered: []
+      };
+      window.pdfjsLib = {
+        GlobalWorkerOptions: {},
+        getDocument: opts => ({ promise: Promise.resolve({
+          numPages: window.__pdf.pages,
+          getPage: n => Promise.resolve({
+            getViewport: ({ scale }) => ({ width: 595 * scale, height: 842 * scale }),
+            render: ({ canvasContext, viewport }) => ({ promise: (async () => {
+              canvasContext.fillStyle = '#fff';
+              canvasContext.fillRect(0, 0, viewport.width, viewport.height);
+              canvasContext.fillStyle = '#000';
+              canvasContext.font = 'bold 48px sans-serif';
+              canvasContext.fillText('PAGE ' + n, 40, 90);
+              window.__pdf.rendered.push({ page: n, w: viewport.width, h: viewport.height });
+            })() }),
+            getTextContent: () => Promise.resolve({ items:
+              (n === 1 ? window.__pdf.text : 'continued').split('\n')
+                .flatMap(line => {
+                  const words = line.split(' ');
+                  return words.map((w, i) => ({ str: w, hasEOL: i === words.length - 1,
+                                                transform: [1, 0, 0, 1, 0, 800 - n] }));
+                })
+            })
+          })
+        }) })
+      };
+    });
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    const receiptsBefore = await page.evaluate(() => window.__mock.rows.length);
+
+    /* ---------- the section ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(900);
+    check('Emails opens as its own page',
+      await page.isVisible('#emails') && !(await page.isVisible('#app')),
+      'emails visible: ' + await page.isVisible('#emails'));
+    check('it starts disconnected, with a Connect Gmail button',
+      await page.isVisible('#gmconnect') &&
+      /not connected/i.test(await page.textContent('#gmbar')),
+      await page.textContent('#gmbar'));
+    check('it says the access is read-only before you connect',
+      /cannot send, change or delete/i.test(await page.textContent('#emlist')),
+      (await page.textContent('#emlist')).slice(0, 160));
+
+    /* ---------- connecting ---------- */
+    await page.click('#gmconnect');
+    await page.waitForTimeout(3000);
+    check('only read-only Gmail permission is asked for',
+      await page.evaluate(() => window.__gsi.scope)
+        === 'https://www.googleapis.com/auth/gmail.readonly',
+      await page.evaluate(() => window.__gsi.scope));
+    check('the connected account is shown',
+      /finn@example\.com/.test(await page.textContent('#gmbar')),
+      await page.textContent('#gmbar'));
+    check('Connect becomes Disconnect', await page.isVisible('#gmdisconnect'), 'no disconnect');
+    check('the email list loads',
+      (await page.$$('#emlist .emrow')).length === 4, (await page.$$('#emlist .emrow')).length);
+    const listTxt = await page.textContent('#emlist');
+    check('each row shows sender, subject and date',
+      /Travis Perkins/.test(listTxt) && /Invoice INV-9001/.test(listTxt) && /8 Sep/.test(listTxt),
+      listTxt.slice(0, 300));
+    check('emails with an attachment are marked',
+      (await page.$$('#emlist .emclip')).length === 3, (await page.$$('#emlist .emclip')).length);
+    check('no token is written to storage',
+      await page.evaluate(() => {
+        try { return !JSON.stringify(localStorage).includes('tok-123'); } catch { return true; }
+      }), 'the access token was persisted');
+    await page.screenshot({ path: `${ROOT}/n37-emails.png` });
+
+    /* ---------- opening one ---------- */
+    await page.click('.emrow:has-text("Invoice INV-9001")');
+    await page.waitForTimeout(1400);
+    const openTxt = await page.textContent('.sbody');
+    check('the email shows sender, date, message and attachments',
+      /travisperkins/.test(openTxt) && /September/.test(openTxt) &&
+      /Total due/.test(openTxt) && /invoice-9001\.pdf/.test(openTxt), openTxt.slice(0, 300));
+    check('both attachments are listed',
+      (await page.$$('.ematt')).length === 2, (await page.$$('.ematt')).length);
+
+    const pdfRow = '.ematt:has-text("invoice-9001.pdf")';
+    const pngRow = '.ematt:has-text("statement.png")';
+    const docRow = '.ematt:has-text("terms.docx")';
+    const pdfRowTxt = await page.textContent(pdfRow);
+    check('each attachment shows its name, type and size',
+      /invoice-9001\.pdf/.test(pdfRowTxt) && /PDF/.test(pdfRowTxt) && /2 KB/.test(pdfRowTxt),
+      pdfRowTxt);
+    check('a supported attachment offers both View and Add to Receipts',
+      await page.isVisible(`${pdfRow} .emview`) && await page.isVisible(`${pdfRow} .emadd`),
+      pdfRowTxt);
+    check('an unsupported attachment is listed but offers neither',
+      /cannot be opened here/.test(await page.textContent(docRow)) &&
+      (await page.$$(`${docRow} .emview`)).length === 0 &&
+      (await page.$$(`${docRow} .emadd`)).length === 0,
+      await page.textContent(docRow));
+    await page.screenshot({ path: `${ROOT}/n38-email.png` });
+
+    /* ---------- looking at the PDF before deciding anything ---------- */
+    await page.click(`${pdfRow} .emview`);
+    await page.waitForTimeout(2500);
+    check('View opens the PDF inside the app',
+      await page.isVisible('#aviewer') && await page.isVisible('#avcanvas'),
+      'viewer: ' + await page.isVisible('#aviewer'));
+    check('the PDF is actually drawn, not just named',
+      await page.evaluate(() => {
+        const c = document.querySelector('#avcanvas');
+        if (!c) return false;
+        const d = c.getContext('2d').getImageData(0, 0, c.width, Math.min(140, c.height)).data;
+        let ink = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] < 100) ink++;
+        return c.width > 300 && ink > 200;          // white page with black text on it
+      }), 'nothing was painted on the canvas');
+    check('it is rendered well above screen size so zooming shows real detail',
+      await page.evaluate(() => {
+        const c = document.querySelector('#avcanvas');
+        return c && c.width >= (document.querySelector('#vbody').clientWidth || 0) * 1.8;
+      }), await page.evaluate(() => document.querySelector('#avcanvas').width));
+    check('page controls say where you are',
+      /Page 1 of 3/.test(await page.textContent('#avpage')), await page.textContent('#avpage'));
+    check('and back is disabled on the first page',
+      await page.isDisabled('#avprev') && !(await page.isDisabled('#avnext')), 'nav wrong');
+
+    await page.click('#avnext');
+    await page.waitForTimeout(900);
+    check('next moves to page 2',
+      /Page 2 of 3/.test(await page.textContent('#avpage')) &&
+      await page.evaluate(() => window.__pdf.rendered.some(r => r.page === 2)),
+      await page.textContent('#avpage'));
+    await page.click('#avnext');
+    await page.waitForTimeout(900);
+    check('and the last page disables next',
+      /Page 3 of 3/.test(await page.textContent('#avpage')) && await page.isDisabled('#avnext'),
+      await page.textContent('#avpage'));
+    await page.click('#avprev');
+    await page.waitForTimeout(900);
+    check('previous goes back again',
+      /Page 2 of 3/.test(await page.textContent('#avpage')), await page.textContent('#avpage'));
+    await page.screenshot({ path: `${ROOT}/n40-viewer.png` });
+
+    const scaleOf = sel => page.evaluate(s => {
+      const t = getComputedStyle(document.querySelector(s)).transform;
+      if (!t || t === 'none') return 1;
+      return Number(t.match(/matrix\(([-\d.]+)/)[1]);
+    }, sel);
+    check('zooming in magnifies the page', await (async () => {
+      const before = await scaleOf('#avcanvas');
+      await page.click('#avzoomin');
+      await page.waitForTimeout(400);
+      return (await scaleOf('#avcanvas')) > before + 0.3;
+    })(), await scaleOf('#avcanvas'));
+    check('a zoomed page can be panned', await (async () => {
+      const box = await page.locator('#vbody').boundingBox();
+      const before = await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#avcanvas')).transform);
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await page.evaluate(() => {
+        const b = document.querySelector('#vbody');
+        const t = (x, y) => [new Touch({ identifier: 1, target: b, clientX: x, clientY: y })];
+        const fire = (type, list, changed) => b.dispatchEvent(new TouchEvent(type,
+          { touches: list, targetTouches: list, changedTouches: changed,
+            bubbles: true, cancelable: true }));
+        fire('touchstart', t(200, 400), t(200, 400));
+        fire('touchmove',  t(120, 330), t(120, 330));
+        fire('touchend',   [],          t(120, 330));
+      });
+      await page.waitForTimeout(400);
+      const after = await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#avcanvas')).transform);
+      return after !== before;
+    })(), 'panning moved nothing');
+    check('zooming out again works too', await (async () => {
+      const before = await scaleOf('#avcanvas');
+      await page.click('#avzoomout');
+      await page.waitForTimeout(400);
+      return (await scaleOf('#avcanvas')) < before - 0.2;
+    })(), await scaleOf('#avcanvas'));
+
+    /* ---------- and adding it from where you are looking at it ---------- */
+    await page.click('#avadd');
+    await page.waitForTimeout(3200);
+    check('Add to Receipts in the viewer closes it and hands over to the form',
+      !(await page.isVisible('#aviewer')) && await page.isVisible('#f_amt'),
+      'viewer still up: ' + await page.isVisible('#aviewer'));
+    check('the total is read out of the PDF text',
+      (await page.inputValue('#f_amt')) === '1245.60', await page.inputValue('#f_amt'));
+    check('the invoice number is read out of it too',
+      await page.evaluate(() => pending && pending.meta && pending.meta.invoice_no) === 'INV-9001',
+      JSON.stringify(await page.evaluate(() => pending && pending.meta)));
+    check('but the VAT rate is not — it stays the 20% default',
+      (await page.inputValue('#f_rate')) === '20' &&
+      /never read off the receipt/i.test(await page.textContent('.readbox')),
+      await page.inputValue('#f_rate') + ' / ' + await page.textContent('.readbox'));
+    check('VAT and net follow from that rate, not from the document',
+      (await page.inputValue('#f_vat')) === '207.60' &&
+      (await page.inputValue('#f_net')) === '1038.00',
+      await page.inputValue('#f_vat') + ' / ' + await page.inputValue('#f_net'));
+    check('the attachment only downloaded once for the view and the import',
+      await page.evaluate(() => attachBytes.size) === 1,
+      await page.evaluate(() => attachBytes.size));
+    await page.evaluate(() => discardPending());
+    await page.waitForTimeout(600);
+
+    /* ---------- straight in, without looking first ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(1200);
+    await page.click('.emrow:has-text("Invoice INV-9001")');
+    await page.waitForTimeout(1500);
+    await page.click(`${pdfRow} .emadd`);
+    await page.waitForTimeout(3200);
+    check('it hands over to the existing receipt form',
+      (await page.textContent('.shead h3')) === 'New receipt' &&
+      await page.isVisible('#f_amt') && await page.isVisible('#f_vat') &&
+      await page.isVisible('#f_rate') && await page.isVisible('#f_net') &&
+      await page.isVisible('#f_date') && await page.isVisible('#f_folderpick'),
+      await page.textContent('.shead h3').catch(() => 'none'));
+    check('the date comes from the email',
+      (await page.inputValue('#f_date')) === '2026-09-08', await page.inputValue('#f_date'));
+    check('VAT defaults to 20% and nothing was scanned for a rate',
+      (await page.inputValue('#f_rate')) === '20', await page.inputValue('#f_rate'));
+    check('the description is started off from the subject',
+      /INV-9001/.test(await page.inputValue('#f_desc')), await page.inputValue('#f_desc'));
+    check('the app still knows which attachment this came from',
+      await page.evaluate(() => emailImport && emailImport.messageId === 'm1'
+                             && emailImport.attachmentId === 'att-1'),
+      JSON.stringify(await page.evaluate(() => emailImport)));
+
+    await page.fill('#f_amt', '1245.60');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    check('the 20% VAT calculation is the existing one',
+      (await page.inputValue('#f_vat')) === '207.60' &&
+      (await page.inputValue('#f_net')) === '1038.00',
+      await page.inputValue('#f_vat') + ' / ' + await page.inputValue('#f_net'));
+    await page.fill('#f_rate', '5');
+    await page.dispatchEvent('#f_rate', 'input');
+    await page.waitForTimeout(300);
+    check('the VAT rate is still mine to change',
+      (await page.inputValue('#f_vat')) === '59.31', await page.inputValue('#f_vat'));
+    await page.fill('#f_rate', '20');
+    await page.dispatchEvent('#f_rate', 'input');
+    await page.waitForTimeout(300);
+
+    await page.evaluate(() => { pending.meta = { invoice_no: 'INV-9001', currency: 'GBP' }; });
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    const saved = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.gmail_message_id === 'm1'));
+    check('the receipt is filed through the normal save',
+      saved && saved.amount === 1245.6 && saved.vat === 207.6 && saved.receipt_date === '2026-09-08',
+      JSON.stringify(saved && { a: saved.amount, v: saved.vat, d: saved.receipt_date }));
+    check('which attachment it came from is recorded',
+      saved && saved.gmail_message_id === 'm1' && saved.gmail_attachment_id === 'att-1',
+      JSON.stringify(saved && saved.gmail_attachment_id));
+    check('exactly one receipt was added',
+      await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 1,
+      await page.evaluate(() => window.__mock.rows.length));
+    check('the import is finished with, so the next receipt is a normal one',
+      await page.evaluate(() => emailImport === null), 'import state left behind');
+
+    /* ---------- the same attachment again ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(1200);
+    await page.click('.emrow:has-text("Invoice INV-9001")');
+    await page.waitForTimeout(1600);
+    check('an attachment already brought in is marked in the list',
+      /Imported/.test(await page.textContent('.ematt:has-text("invoice-9001.pdf")')),
+      await page.textContent('.ematt:has-text("invoice-9001.pdf")'));
+    await page.click('.ematt:has-text("invoice-9001.pdf") .emadd');
+    await page.waitForTimeout(900);
+    check('re-importing warns that it has been imported before',
+      /already been added/i.test(await page.textContent('#askhost')),
+      (await page.textContent('#askhost')).slice(0, 200));
+    check('and the warning can be declined',
+      await (async () => {
+        await page.click('#askhost .btn-ghost');
+        await page.waitForTimeout(900);
+        return await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 1;
+      })(), 'it imported anyway');
+
+    /* ---------- a different invoice, same total to the penny ---------- */
+    await page.click('.sfoot .btn-ghost');       // close the email
+    await page.waitForTimeout(600);
+    await page.click('.emrow:has-text("Statement September")');
+    await page.waitForTimeout(1400);
+    await page.click('.ematt:has-text("statement.png") .emview');
+    await page.waitForTimeout(2200);
+    check('an image attachment opens in the viewer too',
+      await page.isVisible('#aviewer') && await page.isVisible('#avimg'),
+      'image viewer: ' + await page.isVisible('#aviewer'));
+    check('an image gets no page controls, but keeps its zoom controls',
+      await page.isVisible('#avzoomin') && !(await page.isVisible('#avpage')),
+      'controls wrong');
+    check('the image zooms', await (async () => {
+      const before = await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#avimg')).transform);
+      await page.click('#avzoomin');
+      await page.waitForTimeout(400);
+      const after = await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#avimg')).transform);
+      return after !== before && /matrix/.test(after);
+    })(), 'image did not zoom');
+    await page.click('#avclose');
+    await page.waitForTimeout(600);
+    check('closing the viewer goes back to the email, not out of the app',
+      !(await page.isVisible('#aviewer')) &&
+      /statement\.png/.test(await page.textContent('.sbody')),
+      'did not return to the email');
+
+    await page.click('.ematt:has-text("statement.png") .emadd');
+    await page.waitForTimeout(3200);
+    await page.fill('#f_desc', 'Jewson statement');
+    await page.fill('#f_amt', '1245.60');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(900);
+    check('a matching total warns while you type it, not only when you save',
+      await page.isVisible('#f_dup') &&
+      /possible duplicate/i.test(await page.textContent('#f_dup')) &&
+      /same total as an existing receipt/i.test(await page.textContent('#f_dup')),
+      (await page.textContent('#f_dup').catch(() => 'no panel')).slice(0, 200));
+    check('the warning shows the receipt it found: date, folder and total',
+      /£1,?245\.60/.test(await page.textContent('#f_dup')) &&
+      /8 Sep|Sept/.test(await page.textContent('#f_dup')) &&
+      /Unfiled|folder/i.test(await page.textContent('#f_dup')),
+      (await page.textContent('#f_dup')).slice(0, 260));
+    check('with a way to go and look at it', await page.isVisible('#f_dup .dupopen'),
+      'no way to inspect the match');
+    check('it says a matching price is not proof of a duplicate',
+      /only a warning/i.test(await page.textContent('#f_dup')),
+      (await page.textContent('#f_dup')).slice(0, 300));
+    await page.evaluate(() => document.querySelector('#f_dup')
+      .scrollIntoView({ block: 'center' }));
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: `${ROOT}/n39-duplicate.png` });
+
+    await page.fill('#f_amt', '1510.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(900);
+    check('changing the total to one nothing matches clears the warning',
+      !(await page.isVisible('#f_dup')), await page.textContent('#f_dup').catch(() => ''));
+    await page.fill('#f_amt', '1245.60');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(900);
+    check('and putting the matching total back brings it straight back',
+      await page.isVisible('#f_dup'), 'warning did not return');
+
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(1200);
+    const dupTxt = await page.textContent('#askhost').catch(() => '');
+    check('a matching total to the penny raises a possible-duplicate warning',
+      /possible duplicate/i.test(dupTxt) && /£1245\.60|£1,245\.60/.test(dupTxt),
+      dupTxt.slice(0, 240));
+    check('it says a matching amount is only a warning, not proof',
+      /only a warning/i.test(dupTxt), dupTxt.slice(0, 300));
+    check('cancelling leaves the receipt unsaved and the form still there',
+      await (async () => {
+        await page.click('#askhost .btn-ghost');
+        await page.waitForTimeout(900);
+        return await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 1 &&
+               await page.isVisible('#f_amt') &&
+               await page.evaluate(() => document.querySelector('#busy').classList.contains('hide'));
+      })(), 'cancel did not leave things as they were');
+
+    check('and Add anyway lets a genuine second invoice through',
+      await (async () => {
+        await page.click('.sfoot .btn-primary');
+        await page.waitForTimeout(1100);
+        await page.click('#askhost .btn-danger');
+        await page.waitForTimeout(2600);
+        return await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 2;
+      })(), 'Add anyway did not save');
+
+    /* ---------- same invoice number ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(1200);
+    await page.click('.emrow:has-text("Credit note")');
+    await page.waitForTimeout(1400);
+    await page.click('.ematt:has-text("credit-note.pdf") .emadd');
+    await page.waitForTimeout(3200);
+    await page.fill('#f_desc', 'Another one');
+    await page.fill('#f_amt', '77.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { pending.meta = { invoice_no: 'INV-9001' }; });
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(1300);
+    const invTxt = await page.textContent('#askhost').catch(() => '');
+    check('a matching invoice number gives the stronger warning',
+      /same invoice number/i.test(invTxt) && /INV-9001/.test(invTxt), invTxt.slice(0, 240));
+    await page.click('#askhost .btn-ghost');
+    await page.waitForTimeout(800);
+    await page.evaluate(() => discardPending());
+    await page.waitForTimeout(500);
+
+    /* ---------- emails stay out of everything ---------- */
+    await page.evaluate(() => { closeSheet(); showEmails(false); });
+    await page.waitForTimeout(700);
+    check('no email became a receipt on its own',
+      await page.evaluate(() => window.__mock.rows.length) === receiptsBefore + 2,
+      await page.evaluate(() => window.__mock.rows.length));
+    check('nothing about emails is stored in the database',
+      await page.evaluate(() => !window.__mock.rows.some(r => /Just a note|Statement September/
+        .test(r.description || '') && !r.gmail_message_id)), 'an email was stored');
+    check('Planning and Site Records are untouched',
+      await page.evaluate(() => window.__mock.plans.length === 0
+                             && window.__mock.site_records.length === 0), 'other sections touched');
+
+    /* ---------- a connection that lapses ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(900);
+    await page.evaluate(() => { window.__gsi.granted = true; });
+    gmailDown = true;
+    await page.click('#emrefresh');
+    await page.waitForTimeout(2500);
+    check('an expired connection says so instead of hanging',
+      /expired or been withdrawn/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+    check('and it never leaves the screen stuck on loading',
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')),
+      'stuck on loading');
+    check('it drops back to asking you to connect again',
+      await page.isVisible('#gmconnect'), 'still shows as connected');
+    gmailDown = false;
+
+    /* ---------- a sign-in that is dismissed ---------- */
+    await page.evaluate(() => { window.__gsi.granted = false; });
+    await page.click('#gmconnect');
+    await page.waitForTimeout(2500);
+    check('closing the Google window is handled, not left spinning',
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')) &&
+      /not connected/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+
+    /* ---------- disconnecting ---------- */
+    await page.evaluate(() => { window.__gsi.granted = true; });
+    await page.click('#gmconnect');
+    await page.waitForTimeout(3000);
+    check('it can be reconnected', await page.isVisible('#gmdisconnect'), 'not reconnected');
+    await page.click('#gmdisconnect');
+    await page.waitForTimeout(900);
+    check('disconnecting hands the token back to Google',
+      await page.evaluate(() => window.__gsi.revoked.includes('tok-123')),
+      JSON.stringify(await page.evaluate(() => window.__gsi.revoked)));
+    check('and the account and its mail are cleared from the screen',
+      await page.isVisible('#gmconnect') &&
+      !/finn@example\.com/.test(await page.textContent('#gmbar')) &&
+      (await page.$$('#emlist .emrow')).length === 0,
+      await page.textContent('#gmbar'));
+
+    /* ---------- the rest of the app is where it was ---------- */
+    await page.click('#emback');
+    await page.waitForTimeout(700);
+    check('back returns to receipts',
+      await page.isVisible('#app') && !(await page.isVisible('#emails')), 'did not go back');
+    check('the receipt calendar still works',
+      (await page.$$('#grid .cell')).length > 27 &&
+      (await page.textContent('#ttotal')).startsWith('£'), await page.textContent('#ttotal'));
+
+    check('no JS errors through the Gmail flow', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 27 — a receipt is a receipt, with or without Gmail ======
+     The regression this guards against: the save wrote gmail_message_id and
+     gmail_attachment_id on EVERY receipt, so a photograph taken on site failed
+     with "Could not find the 'gmail_attachment_id' column of 'receipts' in the
+     schema cache" on any database that had not had the Gmail migration run.
+     Here the database deliberately does not have those columns at all. */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    await ctx.route('**/accounts.google.com/gsi/client', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stub */' }));
+
+    const B64 = PIXEL.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    await ctx.route('**/gmail.googleapis.com/**', route => {
+      const url = route.request().url();
+      const json = o => route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(o) });
+      if (/\/profile/.test(url)) return json({ emailAddress: 'finn@example.com' });
+      if (/\/attachments\//.test(url)) return json({ data: B64, size: PIXEL.length });
+      if (/\/messages\/mx/.test(url)) return json({
+        id: 'mx', snippet: 'Invoice attached.',
+        payload: { mimeType: 'multipart/mixed',
+          headers: [{ name: 'From', value: 'Jewson <no-reply@jewson.co.uk>' },
+                    { name: 'Subject', value: 'Invoice JW-777' },
+                    { name: 'Date', value: 'Thu, 10 Sep 2026 09:00:00 +0100' }],
+          parts: [{ mimeType: 'image/png', filename: 'jw-777.png',
+                    body: { attachmentId: 'att-x', size: 1024 } }] } });
+      if (/\/messages\?/.test(url)) return json({ messages: [{ id: 'mx' }] });
+      return json({});
+    });
+
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    const busyUp = () => page.evaluate(() =>
+      !document.querySelector('#busy').classList.contains('hide'));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      window.__gsi = { granted: true, revoked: [] };
+      window.google = { accounts: { oauth2: {
+        initTokenClient: cfg => ({ requestAccessToken: () => setTimeout(() =>
+          cfg.callback({ access_token: 'tok-x', expires_in: 3600 }), 40) }),
+        revoke: (t, cb) => { cb && cb(); }
+      } } };
+    });
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+
+    // the migration has not been run on this database
+    await page.evaluate(() => {
+      window.__mock.missingColumns.add('gmail_message_id');
+      window.__mock.missingColumns.add('gmail_attachment_id');
+    });
+
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    /* ---------- TEST 1: a normal receipt, on a database with no Gmail columns ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'Fixings from the merchant');
+    await page.fill('#f_amt', '25');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+
+    const normal = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.description === 'Fixings from the merchant'));
+    check('a camera receipt saves on a database that has no Gmail columns at all',
+      !!normal && normal.amount === 25, JSON.stringify(normal || null));
+    check('and the schema-cache error is gone',
+      !/schema cache/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+    check('the normal save does not mention Gmail at all',
+      !!normal && !('gmail_message_id' in normal) && !('gmail_attachment_id' in normal),
+      JSON.stringify(Object.keys(normal || {})));
+    check('no empty-string stand-in was invented for it either',
+      !!normal && normal.gmail_attachment_id === undefined,
+      JSON.stringify(normal && normal.gmail_attachment_id));
+    check('VAT is still the 20% default worked out from the total',
+      !!normal && normal.vat === 4.17 && normal.vat_rate === 20,
+      JSON.stringify(normal && { vat: normal.vat, rate: normal.vat_rate }));
+    check('it lands on the calendar and in Recently Added like any other',
+      /Fixings from the merchant/.test(await page.textContent('#recentlist')),
+      (await page.textContent('#recentlist')).slice(0, 160));
+    check('and in the month total',
+      Number((await page.textContent('#ttotal')).replace(/[^0-9.]/g, '')) >= 25,
+      await page.textContent('#ttotal'));
+    check('nothing is left covering the app', !(await busyUp()), 'still stuck on Saving');
+
+    /* ---------- editing and re-saving that receipt still works ---------- */
+    // straight to the edit screen: how you get there is covered elsewhere, what
+    // matters here is that re-saving an existing receipt still works
+    await page.evaluate(() => {
+      const r = window.__mock.rows.find(x => x.description === 'Fixings from the merchant');
+      if (r) openReceiptEdit(r);          // absent means the save above failed
+    });
+    await page.waitForTimeout(1400);
+    if (await page.isVisible('#f_amt')) {
+      await page.fill('#f_amt', '26');
+      await page.dispatchEvent('#f_amt', 'input');
+      await page.waitForTimeout(300);
+      await page.click('#e_save');
+      await page.waitForTimeout(2200);
+      if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+        await page.click('#askhost .btn-danger');
+        await page.waitForTimeout(1600);
+      }
+    }
+    check('an existing receipt still edits and re-saves',
+      await page.evaluate(() => window.__mock.rows.some(r =>
+        r.description === 'Fixings from the merchant' && r.amount === 26)),
+      JSON.stringify(await page.evaluate(() => window.__mock.rows.map(r => r.amount))));
+    await page.evaluate(() => closeSheet());
+    await page.waitForTimeout(600);
+
+    /* ---------- TEST 2: a Gmail receipt on the same un-migrated database ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(900);
+    await page.click('#gmconnect');
+    await page.waitForTimeout(3000);
+    await page.click('.emrow:has-text("Invoice JW-777")');
+    await page.waitForTimeout(1600);
+    await page.click('.ematt:has-text("jw-777.png") .emadd');
+    await page.waitForTimeout(3200);
+    check('a Gmail attachment still reaches the existing receipt form',
+      await page.isVisible('#f_amt') && (await page.inputValue('#f_date')) === '2026-09-10',
+      await page.inputValue('#f_date').catch(() => 'no form'));
+    await page.fill('#f_desc', 'Jewson invoice JW-777');
+    await page.fill('#f_amt', '310.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3000);
+    const imported = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.description === 'Jewson invoice JW-777'));
+    check('an import still saves even though the columns are not there',
+      !!imported && imported.amount === 310, JSON.stringify(imported || null));
+    check('and it says plainly that the link back to the email was not recorded',
+      /not recorded|Gmail columns/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+
+    /* ---------- TEST 2b: the same import once the migration has been run ---------- */
+    await page.evaluate(() => {
+      window.__mock.missingColumns.clear();          // sql/gmail-import-setup.sql has now been run
+    });
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(1200);
+    await page.click('.emrow:has-text("Invoice JW-777")');
+    await page.waitForTimeout(1600);
+    await page.click('.ematt:has-text("jw-777.png") .emadd');
+    await page.waitForTimeout(3200);
+    await page.fill('#f_desc', 'Jewson invoice, second copy');
+    await page.fill('#f_amt', '415.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3000);
+    const linked = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.description === 'Jewson invoice, second copy'));
+    check('with the columns in place the Gmail reference is kept',
+      !!linked && linked.gmail_message_id === 'mx' && linked.gmail_attachment_id === 'att-x',
+      JSON.stringify(linked && { m: linked.gmail_message_id, a: linked.gmail_attachment_id }));
+    check('and the receipt is otherwise an ordinary one',
+      !!linked && linked.amount === 415 && linked.vat_rate === 20 && linked.file_path,
+      JSON.stringify(linked && { a: linked.amount, r: linked.vat_rate }));
+
+    /* ---------- TEST 3: the duplicate warning is untouched by all this ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'Paid at the counter instead');
+    await page.fill('#f_amt', '310.00');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(1000);
+    check('a total matching an existing receipt warns as it is typed',
+      await page.isVisible('#f_dup') &&
+      /same total as an existing receipt/i.test(await page.textContent('#f_dup')),
+      (await page.textContent('#f_dup').catch(() => 'no panel')).slice(0, 160));
+    check('and the matching receipt can be inspected',
+      await page.isVisible('#f_dup .dupopen'), 'no way to inspect it');
+    const rowsBefore = await page.evaluate(() => window.__mock.rows.length);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(1400);
+    check('saving asks rather than refusing',
+      /possible duplicate/i.test(await page.textContent('#askhost').catch(() => '')),
+      (await page.textContent('#askhost').catch(() => 'no dialog')).slice(0, 140));
+    await page.click('#askhost .btn-ghost');
+    await page.waitForTimeout(1000);
+    check('Cancel leaves it unsaved and the form still there',
+      await page.evaluate(n => window.__mock.rows.length === n, rowsBefore) &&
+      await page.isVisible('#f_amt'), 'cancel did not hold');
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(1400);
+    await page.click('#askhost .btn-danger');
+    await page.waitForTimeout(2600);
+    check('Add anyway files the second one — two purchases can cost the same',
+      await page.evaluate(n => window.__mock.rows.length === n + 1, rowsBefore) &&
+      await page.evaluate(() => window.__mock.rows.filter(r => r.amount === 310).length === 2),
+      await page.evaluate(() => window.__mock.rows.filter(r => r.amount === 310).length));
+
+    check('no JS errors through either path', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 28 — the email list is not 25 emails long ======
+     100 messages behind four Gmail pages. The list only ever grows, the page
+     token carries on through the same result set, and a page that fails leaves
+     everything already on screen exactly where it was. */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/accounts.google.com/gsi/client', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: '/* stub */' }));
+
+    // e1 is the newest; Gmail hands them back newest first, 25 at a time
+    const PAGES = { '': 't2', t2: 't3', t3: 't4', t4: null };
+    const START = { '': 1, t2: 26, t3: 51, t4: 76 };
+    let failNext = false;
+    const listCalls = [];
+
+    await ctx.route('**/gmail.googleapis.com/**', route => {
+      const url = route.request().url();
+      const json = o => route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify(o) });
+
+      if (/\/profile/.test(url)) return json({ emailAddress: 'finn@example.com' });
+
+      const one = url.match(/\/messages\/(e\d+)/);
+      if (one) {
+        const n = Number(one[1].slice(1));
+        return json({ id: one[1], snippet: 'Message number ' + n,
+          payload: { mimeType: 'multipart/mixed', headers: [
+            { name: 'From', value: 'Sender ' + n + ' <s' + n + '@example.com>' },
+            { name: 'Subject', value: 'Email number ' + n },
+            { name: 'Date', value: 'Tue, 8 Sep 2026 09:00:00 +0100' }] } });
+      }
+
+      if (/\/messages\?/.test(url)) {
+        if (failNext) { failNext = false;
+          return route.fulfill({ status: 500, contentType: 'application/json',
+            body: JSON.stringify({ error: { message: 'Backend error' } }) }); }
+        const tok = (url.match(/pageToken=([^&]*)/) || [, ''])[1];
+        listCalls.push(tok);
+        const from = START[tok];
+        if (from === undefined) return json({ messages: [] });
+        const messages = [];
+        for (let i = from; i < from + 25; i++) messages.push({ id: 'e' + i });
+        const next = PAGES[tok];
+        return json(next ? { messages, nextPageToken: next } : { messages });
+      }
+      return json({});
+    });
+
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      window.google = { accounts: { oauth2: {
+        initTokenClient: cfg => ({ requestAccessToken: () => setTimeout(() =>
+          cfg.callback({ access_token: 'tok-p', expires_in: 3600 }), 40) }),
+        revoke: (t, cb) => { cb && cb(); }
+      } } };
+    });
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    const rows = () => page.$$eval('#emlist .emrow', els => els.length);
+    const subjects = () => page.$$eval('#emlist .emsub', els => els.map(e => e.textContent));
+    // 25 messages are fetched one at a time, so wait for the list to reach the
+    // size being asked about rather than guessing at a sleep
+    // wait on the app's own "a page is in flight" flag rather than on a sleep or
+    // on a row count that is briefly true mid-append
+    const settle = async () => {
+      await page.waitForFunction(() => emailBusy === false, null, { timeout: 180000 })
+        .catch(() => { /* the check that follows reports what actually happened */ });
+      await page.waitForTimeout(350);
+    };
+    const waitRows = async () => settle();
+    const state = async () => JSON.stringify(await page.evaluate(() =>
+      ({ rows: document.querySelectorAll('#emlist .emrow').length,
+         list: emailList.length, token: emailToken, more: emailMore, busy: emailBusy,
+         foot: (document.querySelector('#emfoot') || {}).textContent })));
+    // Tap the button the way a finger does — one dispatched click. (Playwright's
+    // own click re-checks actionability and will retry when the handler disables
+    // the button underneath it, which would count as two taps.)
+    const tap = (times = 1) => page.evaluate(n => {
+      const b = document.querySelector('#emmore');
+      if (!b) return false;
+      for (let i = 0; i < n; i++) b.click();
+      return true;
+    }, times);
+    const loadMore = async () => {
+      await settle();
+      if (!await tap()) console.log('  [paging] no Load more button — ' + await state());
+    };
+
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#memails');
+    await page.waitForTimeout(900);
+    await page.click('#gmconnect');
+    await page.waitForTimeout(1500);
+    await waitRows();
+
+    check('the first page is 25 emails', await rows() === 25, await rows());
+    check('and there is a clear way to get more',
+      await page.isVisible('#emmore') &&
+      /Load 25 more/.test(await page.textContent('#emmore')),
+      await page.textContent('#emmore').catch(() => 'no button'));
+    await page.evaluate(() => document.querySelector('#emfoot')
+      .scrollIntoView({ block: 'end' }));
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${ROOT}/n41-loadmore.png` });
+
+    /* ---------- 25 -> 50 -> 75 -> 100 ---------- */
+    const firstRowBefore = (await subjects())[0];
+    // read the button's state in the same breath as the tap: a small page can
+    // finish faster than any sleep
+    const tapped = await page.evaluate(() => {
+      const b = document.querySelector('#emmore');
+      b.click();
+      const seen = { disabled: b.disabled, text: b.textContent, busy: emailBusy };
+      b.click();                      // an impatient second tap, straight away
+      return seen;
+    });
+    check('the button says it is working and cannot be tapped again',
+      tapped.disabled && tapped.busy && /Loading/.test(tapped.text),
+      JSON.stringify(tapped));
+    await waitRows();
+    check('25 more are appended, not swapped in', await rows() === 50, await rows());
+    check('the emails that were already there have not moved',
+      (await subjects())[0] === firstRowBefore &&
+      (await subjects())[24] === 'Email number 25',
+      (await subjects()).slice(0, 2).join(' | '));
+    check('and an impatient second tap did not fetch the page twice',
+      await page.evaluate(() => emailList.length) === 50, await rows());
+
+    await loadMore();
+    await waitRows();
+    check('again: 75', await rows() === 75, await rows() + ' — ' + await state());
+    await loadMore();
+    await waitRows();
+    check('and again: 100', await rows() === 100, await rows() + ' — ' + await state());
+
+    const subs = await subjects();
+    check('no email appears twice',
+      new Set(subs).size === subs.length, subs.length - new Set(subs).size + ' repeated');
+    check('the Gmail ordering is kept, newest first and pages in order',
+      subs[0] === 'Email number 1' && subs[25] === 'Email number 26' &&
+      subs[50] === 'Email number 51' && subs[99] === 'Email number 100',
+      [subs[0], subs[25], subs[50], subs[99]].join(' | '));
+    check('each page was asked for with its own token, not the first page again',
+      JSON.stringify(listCalls) === JSON.stringify(['', 't2', 't3', 't4']),
+      JSON.stringify(listCalls));
+    check('with no more to come the button is gone, and it says so quietly',
+      !(await page.isVisible('#emmore').catch(() => false)) &&
+      /No more emails/.test(await page.textContent('#emend')),
+      await page.textContent('#emfoot').catch(() => 'no foot'));
+
+    /* ---------- refresh starts again from the newest 25 ---------- */
+    await page.click('#emrefresh');
+    await page.waitForTimeout(1500);
+    await settle();
+    check('Refresh goes back to the newest 25', await rows() === 25, await rows());
+    check('and the pagination starts over with it',
+      await page.isVisible('#emmore') &&
+      await page.evaluate(() => emailToken) === 't2',
+      JSON.stringify(await page.evaluate(() => emailToken)));
+    await loadMore();
+    await waitRows();
+    check('loading more still works after a refresh', await rows() === 50, await rows());
+
+    /* ---------- a page that fails loses nothing ---------- */
+    failNext = true;
+    await loadMore();
+    await page.waitForTimeout(2500);
+    await settle();
+    check('a failed page keeps every email already on screen',
+      await rows() === 50, await rows());
+    check('and says what went wrong',
+      (await page.textContent('#toast').catch(() => '')).length > 0,
+      await page.textContent('#toast').catch(() => 'no toast'));
+    check('the button comes back so it can simply be tried again',
+      await page.isVisible('#emmore') && !(await page.isDisabled('#emmore')),
+      'button did not return');
+    await loadMore();
+    await waitRows();
+    check('and trying again picks up exactly where it left off',
+      await rows() === 75 && (await subjects())[50] === 'Email number 51',
+      await rows() + ' / ' + (await subjects())[50]);
+
+    check('the screen is never left stuck on loading',
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')),
+      'stuck on loading');
+    check('no JS errors through the paging', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 29 — the polish is real, and it gets out of the way ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }));
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    const anim = sel => page.evaluate(s => {
+      const el = document.querySelector(s);
+      if (!el) return 'missing';
+      const c = getComputedStyle(el);
+      return c.animationName + ' ' + c.animationDuration;
+    }, sel);
+    const ms = v => Math.round(parseFloat(v) * (/ms$/.test(v) ? 1 : 1000));
+
+    /* ---------- moving between sections ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(600);
+    await page.click('#mplans');
+    await page.waitForTimeout(120);
+    const planAnim = await anim('#plan');
+    check('a section fades and slides in rather than snapping',
+      /sectin/.test(planAnim), planAnim);
+    check('and the transition is short, not a slow wipe',
+      ms(planAnim.split(' ')[1]) >= 150 && ms(planAnim.split(' ')[1]) <= 300, planAnim);
+    await page.waitForTimeout(600);
+    check('Planning still opens as its own page',
+      await page.isVisible('#plan') && !(await page.isVisible('#app')), 'planning did not open');
+    await page.click('#planback');
+    await page.waitForTimeout(700);
+    check('and going back still lands on the calendar',
+      await page.isVisible('#app') && !(await page.isVisible('#plan')), 'did not go back');
+
+    /* ---------- a tap is felt ---------- */
+    const press = await page.evaluate(() => {
+      const b = document.querySelector('.bar .btn-primary') || document.querySelector('.btn');
+      const c = getComputedStyle(b);
+      return { transition: c.transitionProperty + ' ' + c.transitionDuration,
+               cls: b.className };
+    });
+    check('buttons have a quick press transition, on transform not on layout',
+      /transform/.test(press.transition) && !/width|height|margin/.test(press.transition),
+      JSON.stringify(press));
+
+    /* ---------- bottom sheets ---------- */
+    await page.evaluate(() => openDay(ymd(new Date())));
+    await page.waitForTimeout(700);
+    check('a sheet slides up from the bottom',
+      /up|fade/.test(await anim('.sheet')), await anim('.sheet'));
+    await page.evaluate(() => closeSheet());
+    await page.waitForTimeout(60);
+    check('and plays itself out on the way down instead of vanishing',
+      await page.evaluate(() => !!document.querySelector('.scrim.closing')),
+      'no closing state');
+    check('a sheet on its way out cannot be tapped through',
+      await page.evaluate(() => {
+        const s = document.querySelector('.scrim.closing');
+        return !s || getComputedStyle(s).pointerEvents === 'none';
+      }), 'still interactive while closing');
+    await page.waitForTimeout(700);
+    check('and it is properly gone afterwards',
+      await page.evaluate(() => document.querySelector('#sheets').children.length === 0),
+      await page.evaluate(() => document.querySelector('#sheets').innerHTML.length));
+
+    /* ---------- the new receipt sheet is untouched underneath it all ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    check('New receipt still has exactly the fields it had',
+      await page.isVisible('#f_desc') && await page.isVisible('#f_amt') &&
+      await page.isVisible('#f_vat') && await page.isVisible('#f_rate') &&
+      await page.isVisible('#f_net') && await page.isVisible('#f_date') &&
+      await page.isVisible('#f_folderpick'), 'a field is missing');
+    await page.fill('#f_desc', 'Polish check');
+    await page.fill('#f_amt', '48');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    check('and its VAT arithmetic is the same 20% as ever',
+      (await page.inputValue('#f_vat')) === '8.00' &&
+      (await page.inputValue('#f_rate')) === '20', await page.inputValue('#f_vat'));
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(2000);
+    }
+    check('a receipt still saves with the animations in',
+      await page.evaluate(() => window.__mock.rows.some(r => r.description === 'Polish check')),
+      'not saved');
+    check('and nothing is left covering the app',
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')) &&
+      await page.evaluate(() => document.querySelector('#sheets').children.length === 0),
+      'something is still up');
+    await page.screenshot({ path: `${ROOT}/n42-polished.png` });
+    check('no JS errors with the polish in', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+  /* ====== PHASE 30 — someone who has asked their phone for less motion ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+      reducedMotion: 'reduce',
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }));
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1500);
+
+    check('the app knows the setting is on',
+      await page.evaluate(() => reducedMotion() === true),
+      await page.evaluate(() => reducedMotion()));
+    check('and the movement is switched off rather than merely shortened in feel',
+      await page.evaluate(() => {
+        const c = getComputedStyle(document.querySelector('#app'));
+        return parseFloat(c.animationDuration) < 0.05;
+      }), await page.evaluate(() =>
+        getComputedStyle(document.querySelector('#app')).animationDuration));
+
+    await page.evaluate(() => openDay(ymd(new Date())));
+    await page.waitForTimeout(600);
+    check('a sheet still opens', await page.isVisible('.sheet'), 'no sheet');
+    await page.evaluate(() => closeSheet());
+    await page.waitForTimeout(120);
+    check('and closes immediately, with no animation to sit through',
+      await page.evaluate(() => document.querySelector('#sheets').children.length === 0),
+      await page.evaluate(() => document.querySelector('#sheets').children.length));
+
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'Reduced motion receipt');
+    await page.fill('#f_amt', '31');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(300);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(2000);
+    }
+    check('and the whole receipt flow works exactly the same',
+      await page.evaluate(() =>
+        window.__mock.rows.some(r => r.description === 'Reduced motion receipt')),
+      'not saved');
+    check('no JS errors with motion reduced', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 31 — Statements ======
+     Documents you keep, not figures you count. They have their own page, their
+     own table and their own storage folder, they never touch a receipt, and the
+     receipt PDF only carries them when it is explicitly asked to. */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    // enough of a PDF for the app's "does this start with %PDF" check
+    const TINYPDF = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n');
+    await ctx.route('**/tiny.pdf', r =>
+      r.fulfill({ status: 200, contentType: 'application/pdf', body: TINYPDF }));
+
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      const drawn = { text: [], images: 0, pages: 0 };
+      window.__drawn = drawn;
+      const mkPage = () => { drawn.pages++; return {
+        drawText: t => drawn.text.push(String(t)),
+        drawLine: () => {}, drawImage: () => { drawn.images++; },
+      }; };
+      const font = { widthOfTextAtSize: (s, sz) => String(s).length * sz * 0.5 };
+      window.PDFLib = {
+        StandardFonts: { Helvetica: 'h', HelveticaBold: 'hb' },
+        rgb: () => ({}),
+        PDFDocument: {
+          create: async () => ({
+            embedFont: async () => font,
+            embedJpg: async () => ({ width: 400, height: 600 }),
+            embedPng: async () => ({ width: 400, height: 600 }),
+            addPage: mkPage,
+            copyPages: async () => [mkPage()],
+            save: async () => new Uint8Array([37, 80, 68, 70, 45]),
+          }),
+          load: async () => ({ getPageIndices: () => [0] }),
+        },
+      };
+      navigator.share = undefined;
+      navigator.canShare = undefined;
+      window.__downloads = [];
+      const realCreate = document.createElement.bind(document);
+      document.createElement = function (tag) {
+        const n = realCreate(tag);
+        if (tag === 'a') n.click = () => window.__downloads.push(n.download);
+        return n;
+      };
+    });
+
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.evaluate(() => {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      const day = k => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(Math.max(1, d.getDate() - k))}`;
+      window.__mock.rows.push(
+        { id: 'r1', receipt_date: day(2), description: 'Timber', amount: 120, vat: 20,
+          file_path: 'p/r1.jpg', file_type: 'image/jpeg', image_cleared: false,
+          uploader_name: 'finn@x.com', created_at: '2026-01-01T10:00:00Z' },
+        { id: 'r2', receipt_date: day(3), description: 'Fixings', amount: 60, vat: 10,
+          file_path: 'p/r2.jpg', file_type: 'image/jpeg', image_cleared: false,
+          uploader_name: 'finn@x.com', created_at: '2026-01-02T10:00:00Z' });
+    });
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1600);
+
+    const receiptsAtStart = await page.evaluate(() => window.__mock.rows.length);
+    const monthTotalAtStart = await page.textContent('#ttotal');
+
+    /* ---------- its own section ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(600);
+    check('Statements is in the side menu, alongside the other sections',
+      await page.isVisible('#mstmt'), 'no menu item');
+    await page.click('#mstmt');
+    await page.waitForTimeout(1200);
+    check('and opens as its own page, not inside receipts',
+      await page.isVisible('#stmt') && !(await page.isVisible('#app')),
+      'statements visible: ' + await page.isVisible('#stmt'));
+    check('it starts empty and says what it is for',
+      /No statements yet/.test(await page.textContent('#stlist')),
+      (await page.textContent('#stlist')).slice(0, 120));
+
+    /* ---------- adding one ---------- */
+    await page.click('#addstatement');
+    await page.waitForTimeout(700);
+    await page.fill('#st_title', 'Barclays — August');
+    await page.fill('#st_from', '2026-08-01');
+    await page.fill('#st_to', '2026-08-31');
+    await page.setInputFiles('#stfile', { name: 'aug.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(500);
+    check('the chosen document is shown before saving',
+      /aug\.png/.test(await page.textContent('#st_file')), await page.textContent('#st_file'));
+    await page.click('#st_save');
+    await page.waitForTimeout(2200);
+
+    const saved = await page.evaluate(() => window.__mock.statements[0]);
+    check('a statement saves to its own table',
+      !!saved && saved.title === 'Barclays — August' &&
+      saved.period_start === '2026-08-01' && saved.period_end === '2026-08-31',
+      JSON.stringify(saved || null));
+    check('its file goes in its own storage folder, never among the receipts',
+      !!saved && saved.file_path.startsWith('statements/'),
+      JSON.stringify(saved && saved.file_path));
+    check('and it is listed with its name, period and type',
+      /Barclays/.test(await page.textContent('#stlist')) &&
+      /August/.test(await page.textContent('#stlist')) &&
+      (await page.$$('#stlist .strow')).length === 1,
+      (await page.textContent('#stlist')).slice(0, 160));
+
+    // a second one, this time a PDF
+    await page.click('#addstatement');
+    await page.waitForTimeout(700);
+    await page.fill('#st_title', 'Amex — August');
+    await page.fill('#st_from', '2026-08-05');
+    await page.setInputFiles('#stfile',
+      { name: 'amex.pdf', mimeType: 'application/pdf', buffer: TINYPDF });
+    await page.waitForTimeout(400);
+    await page.click('#st_save');
+    await page.waitForTimeout(2200);
+    check('a PDF statement saves as a PDF',
+      await page.evaluate(() =>
+        (window.__mock.statements.find(s => s.title === 'Amex — August') || {}).file_type)
+        === 'application/pdf',
+      JSON.stringify(await page.evaluate(() => window.__mock.statements.map(s => s.file_type))));
+    check('both are listed', (await page.$$('#stlist .strow')).length === 2,
+      (await page.$$('#stlist .strow')).length);
+    await page.screenshot({ path: `${ROOT}/n43-statements.png` });
+
+    /* ---------- they stay out of receipts entirely ---------- */
+    check('no statement became a receipt',
+      await page.evaluate(() => window.__mock.rows.length) === receiptsAtStart,
+      await page.evaluate(() => window.__mock.rows.length));
+    await page.click('#stback');
+    await page.waitForTimeout(800);
+    check('back lands on the receipt calendar',
+      await page.isVisible('#app') && !(await page.isVisible('#stmt')), 'did not go back');
+    check('the month total is untouched by them',
+      (await page.textContent('#ttotal')) === monthTotalAtStart,
+      await page.textContent('#ttotal') + ' vs ' + monthTotalAtStart);
+    check('and they are not in Recently Added',
+      !/Barclays|Amex/.test(await page.textContent('#recentlist')),
+      (await page.textContent('#recentlist')).slice(0, 140));
+
+    /* ---------- opening, downloading, editing ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#mstmt');
+    await page.waitForTimeout(1200);
+    await page.click('.strow:has-text("Barclays") .stopen');
+    await page.waitForTimeout(2200);
+    check('Open uses the viewer the app already has',
+      await page.isVisible('#aviewer') && await page.isVisible('#avimg'),
+      'viewer: ' + await page.isVisible('#aviewer'));
+    check('and it is a read-only view — no Add to Receipts on a statement',
+      (await page.$$('#avadd')).length === 0, 'an add button appeared');
+    await page.click('#avclose');
+    await page.waitForTimeout(600);
+    check('closing returns to the statements list',
+      !(await page.isVisible('#aviewer')) && await page.isVisible('#stmt'), 'did not return');
+
+    await page.click('.strow:has-text("Amex") .stget');
+    await page.waitForTimeout(1800);
+    check('Download gives back the original file, still a PDF',
+      await page.evaluate(() => (window.__downloads || []).some(n => /Amex.*\.pdf$/.test(n))),
+      JSON.stringify(await page.evaluate(() => window.__downloads)));
+
+    await page.click('.strow:has-text("Barclays") .stedit');
+    await page.waitForTimeout(800);
+    await page.fill('#st_title', 'Barclays current — August');
+    await page.click('#st_save');
+    await page.waitForTimeout(2000);
+    check('editing the details keeps the same document',
+      await page.evaluate(() => {
+        const s = window.__mock.statements.find(x => x.title === 'Barclays current — August');
+        return !!s && s.file_path.startsWith('statements/');
+      }), JSON.stringify(await page.evaluate(() => window.__mock.statements.map(s => s.title))));
+
+    /* ---------- the export, with them off ---------- */
+    await page.click('#stback');
+    await page.waitForTimeout(700);
+    await page.evaluate(() => { window.__drawn.text = []; window.__drawn.pages = 0; });
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('.ditem:has-text("Select Months")');
+    await page.waitForTimeout(1400);
+    check('the export offers Include Statements, switched off',
+      await page.isVisible('#incstmts') &&
+      !(await page.evaluate(() => document.querySelector('#incpick').classList.contains('on'))),
+      'toggle missing or already on');
+    check('and nothing is ticked until it is turned on',
+      (await page.$$('#stsel .incrow')).length === 0, 'statements listed while off');
+
+    await page.click('#selbodyfirst, .selbody .selrow');
+    await page.waitForTimeout(600);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3000);
+    const plain = await page.evaluate(() => ({
+      pages: window.__drawn.pages, hasDivider: window.__drawn.text.some(t => /^STATEMENTS$/.test(t))
+    }));
+    check('with it off the PDF is the receipt report exactly as before',
+      plain.pages > 0 && !plain.hasDivider, JSON.stringify(plain));
+
+    /* ---------- and with them on ---------- */
+    await page.evaluate(() => { window.__drawn.text = []; window.__drawn.pages = 0; });
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('.ditem:has-text("Select Months")');
+    await page.waitForTimeout(1400);
+    await page.click('.selbody .selrow');
+    await page.waitForTimeout(500);
+    await page.click('#incstmts');
+    await page.waitForTimeout(700);
+    check('turning it on lists the statements to choose from',
+      (await page.$$('#stsel .incrow')).length === 2, (await page.$$('#stsel .incrow')).length);
+    check('with none of them ticked to start with',
+      /None selected yet/.test(await page.textContent('#inccount')),
+      await page.textContent('#inccount'));
+
+    await page.click('#incall');
+    await page.waitForTimeout(600);
+    check('Select all ticks them and says how many',
+      /2 selected/.test(await page.textContent('#inccount')) &&
+      /2 of 2 selected/.test(await page.textContent('#stsel')),
+      await page.textContent('#inccount'));
+    await page.click('#stsel .incrow');
+    await page.waitForTimeout(500);
+    check('and one can be taken off again',
+      /1 selected/.test(await page.textContent('#inccount')), await page.textContent('#inccount'));
+    await page.click('#incall');
+    await page.waitForTimeout(600);
+    check('the download button says what it is about to make',
+      /\+ 2 statements/.test(await page.textContent('.sfoot .btn-primary')),
+      await page.textContent('.sfoot .btn-primary'));
+
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3600);
+    const withStmts = await page.evaluate(() => ({
+      pages: window.__drawn.pages,
+      divider: window.__drawn.text.some(t => /^STATEMENTS$/.test(t)),
+      fenced: window.__drawn.text.some(t => /not included in any total/i.test(t)),
+      named: window.__drawn.text.some(t => /Barclays current/.test(t))
+    }));
+    check('the statements are appended to the same PDF',
+      withStmts.pages > plain.pages, JSON.stringify(withStmts));
+    check('behind a STATEMENTS divider page',
+      withStmts.divider, JSON.stringify(withStmts));
+    check('which says plainly they are not part of the totals',
+      withStmts.fenced, JSON.stringify(withStmts));
+    check('a PDF statement is merged and an image one gets its own titled page',
+      withStmts.named, JSON.stringify(withStmts));
+
+    /* ---------- a statement whose file has gone ---------- */
+    await page.evaluate(() => {
+      window.__mock.missingFiles.add(
+        window.__mock.statements.find(s => /Amex/.test(s.title)).file_path);
+      window.__drawn.text = []; window.__drawn.pages = 0;
+    });
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('.ditem:has-text("Select Months")');
+    await page.waitForTimeout(1400);
+    await page.click('.selbody .selrow');
+    await page.waitForTimeout(500);
+    await page.click('#incstmts');
+    await page.waitForTimeout(600);
+    await page.click('#incall');
+    await page.waitForTimeout(600);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3600);
+    check('one unreadable statement does not sink the export',
+      await page.evaluate(() => window.__drawn.pages) > 0 &&
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')),
+      'export died or stuck');
+    check('it is named on the could-not-be-included page and said out loud',
+      await page.evaluate(() => window.__drawn.text.some(t => /Amex/.test(t))) &&
+      /could not be added/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+
+    /* ---------- receipts are exactly as they were ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    check('a new receipt asks for nothing about statements',
+      (await page.$$('.sbody #st_title, .sbody #st_from, .sbody #st_pick')).length === 0,
+      'a statement field appeared on the receipt form');
+    await page.fill('#f_desc', 'Ordinary receipt');
+    await page.fill('#f_amt', '44');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(2000);
+    }
+    const fresh = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.description === 'Ordinary receipt'));
+    check('and it still saves exactly as it did',
+      !!fresh && fresh.amount === 44 && fresh.vat === 7.33, JSON.stringify(fresh || null));
+    check('with no statement fields written to it',
+      !!fresh && !('statement_id' in fresh) && !('period_start' in fresh),
+      JSON.stringify(Object.keys(fresh || {})));
+
+    /* ---------- deleting ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#mstmt');
+    await page.waitForTimeout(1200);
+    await page.click('.strow:has-text("Amex") .stdel');
+    await page.waitForTimeout(800);
+    check('deleting asks first', /cannot be undone/i.test(await page.textContent('#askhost')),
+      (await page.textContent('#askhost')).slice(0, 120));
+    await page.click('#askhost .btn-danger');
+    await page.waitForTimeout(2000);
+    check('and then it is gone',
+      await page.evaluate(() => window.__mock.statements.length) === 1 &&
+      (await page.$$('#stlist .strow')).length === 1,
+      await page.evaluate(() => window.__mock.statements.length));
+
+    check('no JS errors anywhere in Statements', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 32 — one editor everywhere, and a sorted Recently Added ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }));
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+
+    // four receipts on one day, added in a known order, with known totals
+    await page.evaluate(() => {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      const today = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(15)}`;
+      window.__day = today;
+      window.__mock.folders.push({ id: 'f-oak', name: 'Oakwood', created_at: '2026-01-01T09:00:00Z' });
+      window.__mock.rows.push(
+        // all four sit on the same day, and were uploaded in the order a1..a4
+        { id: 'a1', receipt_date: today, description: 'Sand', amount: 30, vat: 5,
+          vat_rate: 20, folder_id: null, file_path: 'p/a1.jpg', file_type: 'image/jpeg',
+          image_cleared: false, uploader_name: 'finn@x.com', created_at: '2026-02-01T09:00:00Z' },
+        { id: 'a2', receipt_date: today, description: 'Cement', amount: 90, vat: 15,
+          vat_rate: 20, folder_id: null, file_path: 'p/a2.jpg', file_type: 'image/jpeg',
+          image_cleared: false, uploader_name: 'finn@x.com', created_at: '2026-02-02T09:00:00Z' },
+        { id: 'a3', receipt_date: today, description: 'Blocks', amount: 15, vat: 2.5,
+          vat_rate: 20, folder_id: null, file_path: 'p/a3.jpg', file_type: 'image/jpeg',
+          image_cleared: false, uploader_name: 'finn@x.com', created_at: '2026-02-03T09:00:00Z' },
+        { id: 'a4', receipt_date: today, description: 'No total on this one', amount: null,
+          vat: null, vat_rate: null, folder_id: null, file_path: 'p/a4.jpg',
+          file_type: 'image/jpeg', image_cleared: false, uploader_name: 'finn@x.com',
+          created_at: '2026-02-04T09:00:00Z' });
+    });
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1800);
+
+    const rowCount = () => page.evaluate(() => window.__mock.rows.length);
+    const startRows = await rowCount();
+
+    /* ---------- opening a receipt from the calendar ---------- */
+    await page.evaluate(() => openDay(window.__day));
+    await page.waitForTimeout(900);
+    check('a day in the calendar lists what was filed on it',
+      (await page.$$('#dayblock .rrow')).length === 4, (await page.$$('#dayblock .rrow')).length);
+    await page.click('#dayblock .rrow:has-text("Cement")');
+    await page.waitForTimeout(1200);
+    check('opening one from the calendar gives the editor, not a read-only view',
+      (await page.textContent('.shead h3')) === 'Edit receipt',
+      await page.textContent('.shead h3').catch(() => 'none'));
+    check('with every field editable',
+      await page.isVisible('#f_desc') && await page.isVisible('#f_amt') &&
+      await page.isVisible('#f_vat') && await page.isVisible('#f_rate') &&
+      await page.isVisible('#f_date') && await page.isVisible('#f_folderpick'),
+      'a field is missing');
+    check('showing the figures already on the receipt',
+      (await page.inputValue('#f_amt')) === '90.00' &&
+      (await page.inputValue('#f_vat')) === '15.00' &&
+      (await page.inputValue('#f_rate')) === '20',
+      await page.inputValue('#f_amt') + ' / ' + await page.inputValue('#f_vat'));
+    await page.screenshot({ path: `${ROOT}/n44-calendar-edit.png` });
+
+    /* ---------- changing the total ---------- */
+    await page.fill('#f_amt', '200');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    check('the existing VAT arithmetic still runs on it',
+      (await page.inputValue('#f_vat')) === '33.33', await page.inputValue('#f_vat'));
+    await page.click('#e_save');
+    await page.waitForTimeout(2400);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1800);
+    }
+    check('it updates the receipt that was already there',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a2') || {}).amount) === 200,
+      JSON.stringify(await page.evaluate(() =>
+        window.__mock.rows.map(r => [r.id, r.amount]))));
+    check('and creates no second copy of it',
+      await rowCount() === startRows, await rowCount());
+    check('its picture is still attached',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a2') || {}).file_path) === 'p/a2.jpg',
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a2') || {}).file_path)));
+
+    check('the day is put back up, redrawn with the new figure',
+      await page.isVisible('#dayblock') &&
+      /£200/.test(await page.textContent('#dayblock')),
+      (await page.textContent('#dayblock').catch(() => 'gone')).slice(0, 120));
+    check('and the month total has moved with it',
+      Number((await page.textContent('#ttotal')).replace(/[^0-9.]/g, '')) >= 245,
+      await page.textContent('#ttotal'));
+
+    /* ---------- changing the folder ---------- */
+    await page.click('#dayblock .rrow:has-text("Sand")');
+    await page.waitForTimeout(1200);
+    check('the folder it is in now is shown',
+      /None/.test(await page.textContent('#f_folderpick')),
+      await page.textContent('#f_folderpick'));
+    await page.click('#f_folderpick');
+    await page.waitForTimeout(700);
+    check('and the existing folders are offered, with a way to unfile it',
+      /Oakwood/.test(await page.textContent('#pickhost')) &&
+      /None/.test(await page.textContent('#pickhost')) &&
+      /New folder/.test(await page.textContent('#pickhost')),
+      (await page.textContent('#pickhost')).slice(0, 140));
+    await page.click('#pickhost .ditem:has-text("Oakwood")');
+    await page.waitForTimeout(600);
+    check('choosing one shows it on the form',
+      /Oakwood/.test(await page.textContent('#f_folderpick')),
+      await page.textContent('#f_folderpick'));
+    await page.click('#e_save');
+    await page.waitForTimeout(2400);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1800);
+    }
+    check('and saving files it there',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a1') || {}).folder_id) === 'f-oak',
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a1') || {}).folder_id)));
+
+    /* ---------- changing the date moves it off the day ---------- */
+    await page.click('#dayblock .rrow:has-text("Blocks")');
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      document.querySelector('#f_date').value =
+        `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(16)}`;
+    });
+    await page.click('#e_save');
+    await page.waitForTimeout(2400);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1800);
+    }
+    check('moving a receipt to another day takes it off the one it was on',
+      !/Blocks/.test(await page.textContent('#dayblock')) &&
+      (await page.$$('#dayblock .rrow')).length === 3,
+      (await page.$$('#dayblock .rrow')).length);
+    check('and it is on the day it went to',
+      await page.evaluate(() =>
+        String((window.__mock.rows.find(r => r.id === 'a3') || {}).receipt_date).endsWith('-16')),
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'a3') || {}).receipt_date)));
+    await page.evaluate(() => closeSheet());
+    await page.waitForTimeout(700);
+
+    /* ---------- sorting Recently Added ---------- */
+    const strip = () => page.$$eval('#recentlist .rrow b', els => els.map(e => e.textContent));
+    check('Recently Added has a sort control, showing how it is ordered',
+      await page.isVisible('#recentsort') &&
+      (await page.textContent('#recentsortlbl')) === 'Newest',
+      await page.textContent('#recentsortlbl').catch(() => 'none'));
+    check('and it starts with the latest receipt date — Blocks was moved to the 16th',
+      (await strip())[0] === 'Blocks', JSON.stringify(await strip()));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    const menu = await page.textContent('.sbody');
+    check('the menu separates receipt date, date added and amount',
+      /Receipt Date/.test(menu) && /Date Added/.test(menu) && /Amount/.test(menu) &&
+      /Newest first/.test(menu) && /Oldest first/.test(menu) &&
+      /Newest added/.test(menu) && /Oldest added/.test(menu) &&
+      /Highest first/.test(menu) && /Lowest first/.test(menu), menu.slice(0, 260));
+    check('and says which date each one means',
+      /the one you type on the receipt screen/i.test(menu) &&
+      /when it was put into the app/i.test(menu), menu.slice(0, 300));
+    check('with the current choice marked',
+      await page.evaluate(() =>
+        document.querySelector('#sort_new').classList.contains('on')), 'not marked');
+    await page.screenshot({ path: `${ROOT}/n45-sort.png` });
+
+    await page.click('#sort_old');
+    await page.waitForTimeout(900);
+    check('oldest receipt date first reverses it, straight away',
+      (await strip()).slice(-1)[0] === 'Blocks' &&
+      (await page.textContent('#recentsortlbl')) === 'Oldest',
+      JSON.stringify(await strip()));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_high');
+    await page.waitForTimeout(900);
+    check('highest amount first orders by the total',
+      (await strip())[0] === 'Cement' && (await strip())[1] === 'Sand' &&
+      (await strip())[2] === 'Blocks',
+      JSON.stringify(await strip()));
+    check('and a receipt with no total goes last, not first',
+      (await strip()).slice(-1)[0] === 'No total on this one', JSON.stringify(await strip()));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_low');
+    await page.waitForTimeout(900);
+    check('lowest first turns it round',
+      (await strip())[0] === 'Blocks' && (await strip())[1] === 'Sand' &&
+      (await strip())[2] === 'Cement',
+      JSON.stringify(await strip()));
+    check('a missing total still sorts last, not as a zero',
+      (await strip()).slice(-1)[0] === 'No total on this one', JSON.stringify(await strip()));
+
+    check('sorting changed the order and nothing else',
+      await page.evaluate(() => {
+        const r = window.__mock.rows;
+        const a1 = r.find(x => x.id === 'a1'), a2 = r.find(x => x.id === 'a2');
+        return r.length === 4 && a1.amount === 30 && a2.amount === 200 &&
+               a1.description === 'Sand';
+      }), JSON.stringify(await page.evaluate(() =>
+        window.__mock.rows.map(r => [r.id, r.amount]))));
+
+    /* ---------- receipt date is not upload date ----------
+       His own example: one bought in January but uploaded in September, one
+       bought in August and uploaded before it. The two sorts must disagree. */
+    await page.evaluate(() => {
+      window.__mock.rows.length = 0;
+      window.__mock.rows.push(
+        { id: 'b1', receipt_date: '2026-01-10', description: 'Bought in January',
+          amount: 100, vat: 16.67, vat_rate: 20, folder_id: null, file_path: 'p/b1.jpg',
+          file_type: 'image/jpeg', image_cleared: false, uploader_name: 'finn@x.com',
+          created_at: '2026-09-10T09:00:00Z' },
+        { id: 'b2', receipt_date: '2026-08-20', description: 'Bought in August',
+          amount: 200, vat: 33.33, vat_rate: 20, folder_id: null, file_path: 'p/b2.jpg',
+          file_type: 'image/jpeg', image_cleared: false, uploader_name: 'finn@x.com',
+          created_at: '2026-09-01T09:00:00Z' });
+      view = new Date(2026, 0, 1);
+    });
+    await page.evaluate(() => loadMonth());
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => { rows = window.__mock.rows.slice(); renderRecent(); });
+    await page.waitForTimeout(700);
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_new');
+    await page.waitForTimeout(900);
+    check('Receipt Date newest first uses the date on the receipt, not the upload',
+      (await strip())[0] === 'Bought in August' && (await strip())[1] === 'Bought in January',
+      JSON.stringify(await strip()));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_addnew');
+    await page.waitForTimeout(900);
+    check('Date Added newest first gives the opposite order, as it should',
+      (await strip())[0] === 'Bought in January' && (await strip())[1] === 'Bought in August',
+      JSON.stringify(await strip()));
+    check('and the label says which one is in use',
+      (await page.textContent('#recentsortlbl')) === 'Newest added',
+      await page.textContent('#recentsortlbl'));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_addold');
+    await page.waitForTimeout(900);
+    check('oldest added turns that round too',
+      (await strip())[0] === 'Bought in August', JSON.stringify(await strip()));
+
+    /* ---------- and editing the date moves it ---------- */
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_new');
+    await page.waitForTimeout(900);
+    await page.click('#recentlist .rrow:has-text("Bought in January")');
+    await page.waitForTimeout(1300);
+    await page.evaluate(() => { document.querySelector('#f_date').value = '2026-12-01'; });
+    await page.click('#e_save');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1900);
+    }
+    await page.evaluate(() => { rows = window.__mock.rows.slice(); renderRecent(); });
+    await page.waitForTimeout(800);
+    check('changing a receipt date moves it in the order straight away',
+      (await strip())[0] === 'Bought in January', JSON.stringify(await strip()));
+    check('and the date it saved is the one on the receipt field',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'b1') || {}).receipt_date) === '2026-12-01',
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'b1') || {}).receipt_date)));
+    check('with no second copy made',
+      await page.evaluate(() => window.__mock.rows.length) === 2,
+      await page.evaluate(() => window.__mock.rows.length));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_low');
+    await page.waitForTimeout(900);
+
+    check('the choice is written down so it survives closing the app',
+      await page.evaluate(() => { try { return localStorage.getItem('recentSort'); }
+                                  catch { return 'unavailable'; } }) === 'low',
+      await page.evaluate(() => { try { return localStorage.getItem('recentSort'); }
+                                  catch { return 'unavailable'; } }));
+
+    /* ---------- the full list follows the same order ---------- */
+    await page.click('#recenthead');
+    await page.waitForTimeout(1600);
+    check('the full Recently Added list says how it is sorted',
+      /Sorted by lowest first/i.test(await page.textContent('#recentsort2')),
+      await page.textContent('#recentsort2').catch(() => 'none'));
+    check('and opening a receipt from it is the same editor',
+      await (async () => {
+        await page.click('.rclist .rcmeta');
+        await page.waitForTimeout(1200);
+        return (await page.textContent('.shead h3')) === 'Edit receipt';
+      })(), await page.textContent('.shead h3').catch(() => 'none'));
+    await page.evaluate(() => { closeSheet(); closeSheet(); });
+    await page.waitForTimeout(800);
+
+    /* ---------- nothing else disturbed ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'Still works');
+    await page.fill('#f_amt', '12');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    check('a brand new receipt still works out its VAT the same way',
+      (await page.inputValue('#f_vat')) === '2.00', await page.inputValue('#f_vat'));
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1800);
+    }
+    check('and still saves',
+      await page.evaluate(() => window.__mock.rows.some(r => r.description === 'Still works')),
+      'not saved');
+
+    /* ---------- and it is still that way after a restart ---------- */
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1200);
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(2200);
+    check('the sort choice is still there after closing and reopening the app',
+      (await page.textContent('#recentsortlbl')) === 'Lowest',
+      await page.textContent('#recentsortlbl').catch(() => 'none'));
+
+    check('no JS errors through any of it', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 33 — searching Recently Added ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }));
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+
+    // this month and last, so searching has to look past the month on screen
+    await page.evaluate(() => {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      const thisM = `${d.getFullYear()}-${p(d.getMonth() + 1)}`;
+      const prev = new Date(d.getFullYear(), d.getMonth() - 1, 10);
+      const prevM = `${prev.getFullYear()}-${p(prev.getMonth() + 1)}`;
+      window.__prevMonthName = ['January','February','March','April','May','June','July',
+        'August','September','October','November','December'][prev.getMonth()];
+      window.__mock.folders.push(
+        { id: 'f-flats', name: 'Flats', created_at: '2026-01-01T09:00:00Z' },
+        { id: 'f-hou', name: 'Houses', created_at: '2026-01-01T09:00:00Z' });
+      const mk = (id, date, desc, amount, vat, rate, folder, created) =>
+        ({ id, receipt_date: date, description: desc, amount, vat, net: amount === null ? null
+             : Math.round((amount - (vat || 0)) * 100) / 100,
+           vat_rate: rate, folder_id: folder, file_path: 'p/' + id + '.jpg',
+           file_type: 'image/jpeg', image_cleared: false, uploader_name: 'finn@x.com',
+           created_at: created });
+      window.__mock.rows.push(
+        mk('s1', thisM + '-05', 'Screwfix fixings', 120, 20, 20, 'f-flats', '2026-03-01T09:00:00Z'),
+        mk('s2', thisM + '-06', 'Timber merchant',  1245.60, 207.60, 20, 'f-hou', '2026-03-02T09:00:00Z'),
+        mk('s3', thisM + '-07', 'Diesel',           53.80, 8.33, null, null,      '2026-03-03T09:00:00Z'),
+        mk('s4', prevM + '-10', 'Screwfix screws',  45, 7.50, 20, 'f-flats',      '2026-03-04T09:00:00Z'),
+        mk('s5', prevM + '-11', 'Skip hire',        300, 50, 20, 'f-hou',         '2026-03-05T09:00:00Z'));
+    });
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1800);
+
+    const hits = () => page.$$eval('#recentlist .rrow b', els => els.map(e => e.textContent));
+    const type = async q => {
+      await page.fill('#recentsearch', q);
+      await page.dispatchEvent('#recentsearch', 'input');
+      await page.waitForTimeout(900);
+    };
+    const startRows = await page.evaluate(() => window.__mock.rows.length);
+
+    check('there is a search bar in Recently Added, with the sort beside it',
+      await page.isVisible('#recentsearch') && await page.isVisible('#recentsort') &&
+      (await page.getAttribute('#recentsearch', 'placeholder')) === 'Search receipts…',
+      await page.getAttribute('#recentsearch', 'placeholder').catch(() => 'missing'));
+    check('and no clear button until something is typed',
+      !(await page.isVisible('#recentclear')), 'clear button showing already');
+
+    /* ---------- by description ---------- */
+    await type('screwfix');
+    check('searching a description finds them, including one from another month',
+      (await hits()).length === 2 &&
+      (await hits()).join('|').includes('Screwfix fixings') &&
+      (await hits()).join('|').includes('Screwfix screws'),
+      JSON.stringify(await hits()));
+    check('a clear button appears once there is something to clear',
+      await page.isVisible('#recentclear'), 'no clear button');
+    await page.screenshot({ path: `${ROOT}/n46-search.png` });
+
+    /* ---------- case ---------- */
+    await type('SCREWFIX');
+    check('it does not care about capitals',
+      (await hits()).length === 2, JSON.stringify(await hits()));
+
+    /* ---------- by amount, in the ways people type it ---------- */
+    await type('120');
+    check('searching a bare amount finds the receipt at that total',
+      (await hits()).includes('Screwfix fixings'), JSON.stringify(await hits()));
+    await type('£120');
+    check('and with a pound sign in front',
+      (await hits()).includes('Screwfix fixings'), JSON.stringify(await hits()));
+    await type('120.00');
+    check('and written out to the penny',
+      (await hits()).includes('Screwfix fixings'), JSON.stringify(await hits()));
+    await type('1,245.60');
+    check('a total with a thousands comma is found however it is typed',
+      (await hits()).length === 1 && (await hits())[0] === 'Timber merchant',
+      JSON.stringify(await hits()));
+    await type('207.60');
+    check('the VAT figure is searchable too',
+      (await hits()).includes('Timber merchant'), JSON.stringify(await hits()));
+
+    /* ---------- by folder ---------- */
+    await type('flats');
+    check('searching a folder name finds what is filed in it',
+      (await hits()).length === 2 &&
+      (await hits()).join('|').includes('Screwfix fixings') &&
+      (await hits()).join('|').includes('Screwfix screws'),
+      JSON.stringify(await hits()));
+
+    /* ---------- by month ---------- */
+    await page.evaluate(() => { window.__q = window.__prevMonthName; });
+    await type(await page.evaluate(() => window.__prevMonthName));
+    check('searching a month name finds that month, across the month on screen',
+      (await hits()).length === 2 &&
+      (await hits()).join('|').includes('Skip hire'),
+      JSON.stringify(await hits()) + ' for ' + await page.evaluate(() => window.__prevMonthName));
+
+    /* ---------- nothing found ---------- */
+    await type('nothing like this exists');
+    check('no matches says so, plainly',
+      /No receipts found/.test(await page.textContent('#recentlist')) &&
+      (await hits()).length === 0,
+      (await page.textContent('#recentlist')).slice(0, 80));
+
+    /* ---------- clearing ---------- */
+    await page.click('#recentclear');
+    await page.waitForTimeout(800);
+    check('the X clears it and the normal list comes back',
+      (await page.inputValue('#recentsearch')) === '' &&
+      !(await page.isVisible('#recentclear')) &&
+      (await hits()).length === 3,
+      JSON.stringify(await hits()));
+
+    /* ---------- search and sort together ---------- */
+    await type('screwfix');
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_high');
+    await page.waitForTimeout(900);
+    check('sorting applies to what the search found, not to everything',
+      (await hits()).length === 2 && (await hits())[0] === 'Screwfix fixings',
+      JSON.stringify(await hits()));
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_low');
+    await page.waitForTimeout(900);
+    check('and turning the sort round turns the results round',
+      (await hits())[0] === 'Screwfix screws', JSON.stringify(await hits()));
+    check('the search is still what it was',
+      (await page.inputValue('#recentsearch')) === 'screwfix',
+      await page.inputValue('#recentsearch'));
+
+    // and with the receipt date, which is the one that matters
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_new');
+    await page.waitForTimeout(900);
+    check('search plus Receipt Date newest first orders the matches by their own date',
+      (await hits()).length === 2 && (await hits())[0] === 'Screwfix fixings',
+      JSON.stringify(await hits()));
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_old');
+    await page.waitForTimeout(900);
+    check('and oldest receipt date first puts the older purchase on top',
+      (await hits())[0] === 'Screwfix screws', JSON.stringify(await hits()));
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_low');
+    await page.waitForTimeout(900);
+
+    /* ---------- opening one from the results ---------- */
+    await page.click('#recentlist .rrow:has-text("Screwfix fixings")');
+    await page.waitForTimeout(1300);
+    check('a search result opens the same editor as anywhere else',
+      (await page.textContent('.shead h3')) === 'Edit receipt' &&
+      await page.isVisible('#f_amt') && await page.isVisible('#f_folderpick'),
+      await page.textContent('.shead h3').catch(() => 'none'));
+    await page.fill('#f_amt', '135');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    check('with the VAT arithmetic working as it always does',
+      (await page.inputValue('#f_vat')) === '22.50', await page.inputValue('#f_vat'));
+    await page.click('#e_save');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1900);
+    }
+    check('saving updates the receipt that was already there',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 's1') || {}).amount) === 135,
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 's1') || {}).amount)));
+    check('and makes no second copy of it',
+      await page.evaluate(() => window.__mock.rows.length) === startRows,
+      await page.evaluate(() => window.__mock.rows.length));
+    await page.waitForTimeout(900);
+    check('the results are still up, redrawn with the new figure',
+      (await page.inputValue('#recentsearch')) === 'screwfix' &&
+      /135/.test(await page.textContent('#recentlist')),
+      (await page.textContent('#recentlist')).slice(0, 160));
+    check('and searching the new figure finds it',
+      await (async () => { await type('135'); return (await hits()).includes('Screwfix fixings'); })(),
+      JSON.stringify(await hits()));
+
+    /* ---------- nothing else disturbed ---------- */
+    await page.click('#recentclear');
+    await page.waitForTimeout(800);
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'After searching');
+    await page.fill('#f_amt', '18');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1900);
+    }
+    check('a normal receipt still saves with search on the page',
+      await page.evaluate(() => window.__mock.rows.some(r => r.description === 'After searching')),
+      'not saved');
+    check('and it turns up in a search straight away',
+      await (async () => { await type('after searching');
+                           return (await hits()).includes('After searching'); })(),
+      JSON.stringify(await hits()));
+    check('the calendar and totals are unaffected by any of it',
+      (await page.$$('#grid .cell')).length > 27 &&
+      (await page.textContent('#ttotal')).startsWith('£'), await page.textContent('#ttotal'));
+
+    check('no JS errors through searching', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
 
   console.log('\n=== PASS (' + pass.length + ') ===');
   pass.forEach(p => console.log('  ✓ ' + p));

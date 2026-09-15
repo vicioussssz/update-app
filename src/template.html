@@ -98,10 +98,10 @@ label{display:block;font-size:13px;font-weight:400;color:var(--muted);margin:0 0
 
 /* ---------- app chrome ---------- */
 /* phone-first; on a laptop it stays a phone-width column rather than stretching */
-#app,#plan,#site,#emails{min-height:100%;display:flex;flex-direction:column;
+#app,#plan,#site,#emails,#stmt{min-height:100%;display:flex;flex-direction:column;
   max-width:540px;margin:0 auto;width:100%}
 @media(min-width:560px){
-  #app,#plan,#site,#emails{border-inline:1px solid var(--line)}
+  #app,#plan,#site,#emails,#stmt{border-inline:1px solid var(--line)}
   .cell{aspect-ratio:1/.86}
 }
 header{position:sticky;top:0;z-index:20;background:rgba(0,0,0,.8);
@@ -166,6 +166,22 @@ main{flex:1;padding:16px 12px 0}
   border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);
   transform:rotate(-45deg)}
 .rechead:active h3,.rechead:active .chev{opacity:.55}
+.rechrow{display:flex;align-items:center;gap:8px;padding:0 16px 10px}
+.recsort{display:flex;align-items:center;gap:5px;flex:none;
+  font-size:12px;font-weight:600;letter-spacing:.03em;color:var(--accent);
+  transition:opacity .13s ease}
+.recsort:active{opacity:.55}
+.srch{flex:1;min-width:0;display:flex;align-items:center;gap:8px;
+  background:var(--surface-2);border-radius:10px;padding:0 10px;height:38px;
+  color:var(--faint)}
+.srch input{flex:1;min-width:0;background:none;border:0;padding:0;height:36px;
+  font-size:15px;color:var(--text)}
+.srch input::placeholder{color:var(--faint)}
+.srch input:focus{box-shadow:none;outline:none}
+.srch button{flex:none;width:22px;height:22px;border-radius:11px;display:grid;
+  place-items:center;background:var(--surface-3);color:var(--text)}
+.srch button:active{opacity:.6}
+.srchnote{padding:0 16px 8px;font-size:12px;color:var(--muted)}
 
 /* ---------- bottom bar ---------- */
 .bar{position:sticky;bottom:0;z-index:20;display:flex;gap:10px;
@@ -660,6 +676,56 @@ main{flex:1;padding:16px 12px 0}
 .emclip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;
   color:var(--accent);margin-top:3px}
 
+/* the way to the next page, and the quiet line when there is not one */
+.loadmore{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;
+  margin-top:12px;min-height:48px;padding:13px 16px;border-radius:var(--radius);
+  background:var(--surface);font-size:15px;font-weight:600;color:var(--accent);
+  transition:transform .12s ease,opacity .12s ease,background .15s ease}
+.loadmore:active{transform:scale(.985);background:var(--surface-2)}
+.loadmore[disabled]{color:var(--muted);opacity:.85}
+.loadmore .ldot{display:none;width:15px;height:15px;flex:none;
+  border:2px solid var(--surface-3);border-top-color:var(--muted);border-radius:50%;
+  animation:sp .8s linear infinite}
+.loadmore.working .ldot{display:block}
+.emend{margin-top:14px;text-align:center;font-size:13px;color:var(--faint)}
+
+/* ---------- statements ----------
+   A document you keep, not a figure you count. Same cards, same spacing as the
+   rest of the app; only the actions differ. */
+.strow{display:flex;align-items:flex-start;gap:12px;padding:12px 13px;width:100%;
+  text-align:left;position:relative;flex-wrap:wrap}
+.strow + .strow::before{content:"";position:absolute;top:0;left:13px;right:13px;height:1px;
+  background:var(--line);transform:scaleY(.5)}
+.stkind{width:42px;height:52px;border-radius:8px;flex:none;display:grid;place-items:center;
+  background:var(--surface-2);font-size:10px;font-weight:700;color:var(--faint)}
+.stkind.pdf{background:rgba(255,69,58,.16);color:#ff6961}
+.stkind.img{background:rgba(10,132,255,.16);color:#5ea9ff}
+.strow .meta{flex:1;min-width:0}
+.strow .meta b{display:block;font-size:15px;font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strow .meta span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.stacts{display:flex;gap:8px;width:100%;margin-top:2px}
+.stacts button{flex:1;padding:9px 6px;border-radius:9px;font-size:13.5px;font-weight:600;
+  background:var(--surface-2);color:var(--text);
+  transition:transform .13s cubic-bezier(.32,.72,0,1),background-color .16s ease}
+.stacts button:active{transform:scale(.975)}
+.stacts .stopen{background:var(--accent);color:#fff}
+.stacts .stdel{color:#ff6961}
+.sthead{font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:12px}
+
+/* the statement picker that sits inside the export sheet */
+.incrow{display:flex;align-items:center;gap:11px;padding:13px;width:100%;text-align:left}
+.incrow .meta{flex:1;min-width:0}
+.incrow .meta b{display:block;font-size:15px;font-weight:500}
+.incrow .meta span{display:block;font-size:12.5px;color:var(--muted)}
+.stsel{margin-top:10px}
+.stsel .bar2{display:flex;align-items:center;justify-content:space-between;
+  padding:0 2px 8px;font-size:13px;color:var(--muted)}
+.stsel .bar2 button{font-size:13.5px;font-weight:600;color:var(--accent)}
+/* rows that have just arrived settle in; the ones above them do not move */
+.emnew{animation:rowin .24s ease both}
+@keyframes rowin{from{opacity:0;transform:translateY(6px)}}
+
 .emfacts{display:flex;flex-direction:column;gap:8px;margin-bottom:4px}
 .emfact{display:flex;gap:10px;font-size:14.5px}
 .emfact b{width:64px;flex:none;color:var(--muted);font-weight:400;font-size:13.5px}
@@ -667,19 +733,59 @@ main{flex:1;padding:16px 12px 0}
 .embody{font-size:14.5px;line-height:1.5;white-space:pre-wrap;color:var(--muted);
   max-height:210px;overflow-y:auto;background:var(--surface-2);border-radius:10px;
   padding:12px 13px}
+/* An attachment is a row you can read at a glance and two plain choices:
+   look at it first, or send it straight into the receipt form. */
 .ematt{display:flex;align-items:center;gap:11px;padding:11px 12px;width:100%;
-  text-align:left;position:relative;min-height:58px}
+  text-align:left;position:relative;min-height:58px;flex-wrap:wrap}
 .ematt + .ematt::before{content:"";position:absolute;top:0;left:12px;right:12px;height:1px;
   background:var(--line);transform:scaleY(.5)}
-.ematt:active{background:var(--surface-2)}
 .emkind{width:38px;height:38px;border-radius:9px;flex:none;display:grid;place-items:center;
   background:var(--surface-2);font-size:10px;font-weight:700;color:var(--faint)}
+.emkind.pdf{background:rgba(255,69,58,.16);color:#ff6961}
+.emkind.img{background:rgba(10,132,255,.16);color:#5ea9ff}
 .ematt .meta{flex:1;min-width:0}
 .ematt .meta b{display:block;font-size:14.5px;font-weight:500;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ematt .meta span{display:block;font-size:12px;color:var(--muted)}
 .emdone{font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
   color:#ffa62b;background:rgba(255,159,10,.16);border-radius:20px;padding:3px 8px;flex:none}
+.emacts{display:flex;gap:8px;width:100%;margin-top:2px}
+.emacts button{flex:1;padding:9px 10px;border-radius:9px;font-size:14px;font-weight:600}
+.emview{background:var(--surface-2);color:var(--text)}
+.emadd{background:var(--accent);color:#fff}
+.emacts button:active{opacity:.7}
+
+/* the attachment viewer: the document fills the screen, the controls sit over it */
+.viewer .vfoot{display:flex;align-items:center;gap:8px;
+  padding:8px 10px calc(var(--sab) + 10px);background:rgba(0,0,0,.72);
+  position:relative;z-index:3}
+.viewer .vfoot .btn{flex:1;min-height:44px}
+.vpages{display:flex;align-items:center;justify-content:center;gap:10px;
+  padding:6px 10px;background:rgba(0,0,0,.72);position:relative;z-index:3}
+.vpages .icb{background:rgba(255,255,255,.12);color:#fff;width:38px;height:38px}
+.vpages .icb[disabled]{opacity:.32}
+.vpages b{font-size:13.5px;font-weight:600;color:#fff;min-width:82px;text-align:center;
+  font-variant-numeric:tabular-nums}
+.vzoom{display:flex;gap:6px}
+.vzoom .icb{background:rgba(255,255,255,.12);color:#fff;width:38px;height:38px;
+  font-size:19px;font-weight:600;line-height:1}
+.viewer canvas{max-width:100%;max-height:100%;object-fit:contain;
+  will-change:transform;transform-origin:center center}
+.vmsg{color:#fff;font-size:14.5px;text-align:center;padding:24px;line-height:1.5;opacity:.85}
+
+/* the possible-duplicate panel that lives under the total on the receipt form */
+.dupbox{display:flex;gap:11px;align-items:flex-start;padding:11px 12px;border-radius:11px;
+  background:rgba(255,159,10,.12);box-shadow:inset 0 0 0 1.5px rgba(255,159,10,.35)}
+.dupbox.hide{display:none}
+.dupbox .dupimg{width:46px;height:58px;flex:none;border-radius:7px;object-fit:cover;
+  background:var(--surface-2)}
+.dupbox .dupfile{width:46px;height:58px;flex:none;border-radius:7px;display:grid;
+  place-items:center;background:var(--surface-2);font-size:10px;font-weight:700;color:var(--faint)}
+.dupbox .dupmeta{flex:1;min-width:0}
+.dupbox .dupmeta b{display:block;font-size:13.5px;font-weight:700;color:#ffa62b;
+  margin-bottom:3px}
+.dupbox .dupmeta span{display:block;font-size:13px;color:var(--muted);line-height:1.45}
+.dupbox .dupmeta button{margin-top:6px;font-size:13.5px;font-weight:600;color:var(--accent)}
 
 /* the status picker on the form */
 .statuses{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -726,6 +832,62 @@ main{flex:1;padding:16px 12px 0}
 .spin{width:32px;height:32px;border:3px solid var(--line);
   border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
+
+/* ============================================================
+   POLISH
+   Movement is here to explain what just happened — a sheet came from the
+   bottom, a page replaced another, a button took the tap. Everything is short
+   (150-260ms), uses only transform and opacity so it runs on the GPU and cannot
+   shift layout, and the whole lot stands down for anyone who has asked their
+   phone for less motion.
+   ============================================================ */
+
+/* one section giving way to another */
+@keyframes sectin{from{opacity:0;transform:translateY(8px)}}
+#app:not(.hide),#plan:not(.hide),#site:not(.hide),#emails:not(.hide),#stmt:not(.hide){
+  animation:sectin .24s cubic-bezier(.32,.72,0,1) both}
+
+/* a tap should be felt before anything else happens */
+.btn,.icb,.emrow,.rrow,.rcrow,.srrow,.ditem,.ematt,.loadmore,.pickfolder,.pickproject,
+.statuses button,.emacts button,.dupbox .dupmeta button{
+  transition:transform .13s cubic-bezier(.32,.72,0,1),opacity .13s ease,
+             background-color .16s ease,color .16s ease}
+.btn:active,.loadmore:active,.emacts button:active{transform:scale(.975)}
+.icb:active{transform:scale(.9);opacity:.75}
+.emrow:active,.rrow:active,.rcrow:active,.srrow:active,.ditem:active,.ematt:active,
+.pickfolder:active,.pickproject:active{transform:scale(.993)}
+.btn[disabled],.loadmore[disabled]{transform:none}
+
+/* selected things settle into place rather than snapping */
+.cell,.statuses button,.ditem,.chip,.seg button{
+  transition:background-color .18s ease,color .18s ease,box-shadow .18s ease}
+
+/* the sheet leaves the way it came in */
+.scrim.closing{animation:fadeout .18s ease both;pointer-events:none}
+.scrim.closing .sheet{animation:down .18s cubic-bezier(.32,.72,0,1) both}
+@keyframes fadeout{to{opacity:0}}
+@keyframes down{to{transform:translateY(100%)}}
+@media(min-width:560px){
+  .scrim.closing .sheet{animation:fadeout .16s ease both}
+}
+
+/* the working overlay should not arrive like a slammed door */
+#busy{animation:fade .16s ease}
+#toast{animation:toastin .2s cubic-bezier(.32,.72,0,1)}
+@keyframes toastin{from{opacity:0;transform:translateX(-50%) translateY(8px)}}
+
+/* scrolling stays inside the thing being scrolled */
+.sbody,#emlist,#recentlist,.embody{overscroll-behavior:contain}
+
+/* and none of it happens if the phone has been asked for less movement */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.01ms!important;scroll-behavior:auto!important}
+  .btn:active,.icb:active,.emrow:active,.rrow:active,.rcrow:active,.srrow:active,
+  .ditem:active,.ematt:active,.loadmore:active,.emacts button:active,
+  .pickfolder:active,.pickproject:active{transform:none}
+}
 .track{width:min(240px,60vw);height:4px;border-radius:2px;background:var(--line);overflow:hidden}
 .track i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
 </style>
@@ -798,6 +960,25 @@ main{flex:1;padding:16px 12px 0}
         <h3>Recently Added</h3>
         <span class="chev"></span>
       </button>
+      <div class="rechrow">
+        <div class="srch">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+          <input id="recentsearch" type="text" inputmode="search" autocomplete="off"
+                 placeholder="Search receipts…" aria-label="Search receipts">
+          <button id="recentclear" class="hide" aria-label="Clear search">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <button id="recentsort" class="recsort" aria-label="Sort receipts">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>
+          <span id="recentsortlbl">Newest</span>
+        </button>
+      </div>
       <div class="rlist" id="recentlist"></div>
     </section>
   </main>
@@ -895,6 +1076,42 @@ main{flex:1;padding:16px 12px 0}
 </section>
 
 <input type="file" id="sitefiles" accept="image/*" multiple class="hide">
+
+<!-- ============ STATEMENTS ============
+     Bank, card and account statements. Documents in their own right: they are
+     never receipts, never counted, and never touch the VAT figures. -->
+<section id="stmt" class="hide">
+  <header>
+    <div class="hrow">
+      <button class="icb" id="stback" aria-label="Back to receipts">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="mnav"><b class="mtitle" style="pointer-events:none">Statements</b></div>
+      <button class="icb" id="stfilter" aria-label="Filter by kind">
+        <svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>
+      </button>
+    </div>
+    <div class="totals">
+      <div><span>Statements</span><b id="stcount">0</b></div>
+      <div><span>Showing</span><b id="stscope" class="accent">All</b></div>
+    </div>
+  </header>
+
+  <main>
+    <div id="stlist"></div>
+  </main>
+
+  <div class="bar">
+    <button class="btn btn-primary" id="addstatement">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12h14"/></svg>
+      Add Statement
+    </button>
+  </div>
+</section>
+
+<input type="file" id="stfile" accept="image/*,application/pdf" class="hide">
 
 <!-- ============ EMAILS ============ -->
 <section id="emails" class="hide">
@@ -1149,6 +1366,7 @@ function monthRange(d) {
 }
 
 async function loadMonth() {
+  forgetDupIndex();          // receipts have changed; the duplicate list is stale
   const [from, to] = monthRange(view);
   $('#mlabel').textContent = `${MONTHS[view.getMonth()]} ${view.getFullYear()}`;
   renderGrid();                                   // paint the empty shell immediately
@@ -1248,19 +1466,215 @@ function renderTotals() {
   $('#ttotal').textContent = money(s.total);
 }
 
+/* ---------- how Recently Added is ordered ----------
+   Four ways of looking at the same receipts. Nothing is rewritten and nothing
+   is refetched: this only decides the order they are drawn in. The choice is
+   remembered between visits. */
+const SORTS = {
+  // the date on the receipt is the one that means something: it is the date
+  // typed on the form, and a bulk upload does not disturb it
+  new:    { label: 'Newest',       what: 'Newest first',  by: 'receipt' },
+  old:    { label: 'Oldest',       what: 'Oldest first',  by: 'receipt' },
+  addnew: { label: 'Newest added', what: 'Newest added',  by: 'added' },
+  addold: { label: 'Oldest added', what: 'Oldest added',  by: 'added' },
+  high:   { label: 'Highest',      what: 'Highest first', by: 'amount' },
+  low:    { label: 'Lowest',       what: 'Lowest first',  by: 'amount' }
+};
+
+let recentSort = (() => {
+  try { return SORTS[localStorage.getItem('recentSort')] ? localStorage.getItem('recentSort') : 'new'; }
+  catch { return 'new'; }
+})();
+
+/* A receipt with no total sorts to the end whichever way amount is pointing —
+   an unknown figure is not a small one. Two receipts on the same day fall back
+   to when they were added, and then to their id, so the same list always comes
+   out in the same order. */
+function sortReceipts(list, how) {
+  const on = r => String(r.receipt_date || '');          // the date on the receipt
+  const added = r => String(r.created_at || '');         // when it was put in the app
+  const id = r => String(r.id || '');
+  const amt = r => (r.amount === null || r.amount === undefined) ? null : Number(r.amount);
+  const by = (SORTS[how] || SORTS.new).by;
+  const out = [...list];
+
+  out.sort((a, b) => {
+    if (by === 'amount') {
+      const x = amt(a), y = amt(b);
+      if (x === null && y === null) return on(b).localeCompare(on(a)) || added(b).localeCompare(added(a));
+      if (x === null) return 1;
+      if (y === null) return -1;
+      if (x !== y) return how === 'high' ? y - x : x - y;
+      return on(b).localeCompare(on(a)) || added(b).localeCompare(added(a)) || id(a).localeCompare(id(b));
+    }
+    if (by === 'added') {
+      return how === 'addold'
+        ? added(a).localeCompare(added(b)) || id(a).localeCompare(id(b))
+        : added(b).localeCompare(added(a)) || id(b).localeCompare(id(a));
+    }
+    return how === 'old'
+      ? on(a).localeCompare(on(b)) || added(a).localeCompare(added(b)) || id(a).localeCompare(id(b))
+      : on(b).localeCompare(on(a)) || added(b).localeCompare(added(a)) || id(b).localeCompare(id(a));
+  });
+  return out;
+}
+
+function setRecentSort(how) {
+  if (!SORTS[how]) return;
+  recentSort = how;
+  try { localStorage.setItem('recentSort', how); } catch { /* fine without it */ }
+  renderRecent();
+}
+
+function openSortMenu() {
+  const opt = key => el('button', {
+    class: 'ditem' + (recentSort === key ? ' on' : ''), id: 'sort_' + key,
+    onclick: () => { setRecentSort(key); closeSheet(); } }, [
+    el('span', { class: 'lbl', text: SORTS[key].what })
+  ]);
+  sheet({
+    title: 'Sort by',
+    body: [
+      el('div', { class: 'grp' }, [
+        el('h4', { text: 'Receipt Date' }),
+        el('div', { class: 'card' }, [opt('new'), opt('old')]),
+        el('p', { class: 'hintline',
+          text: 'The date on the receipt — the one you type on the receipt screen.' })
+      ]),
+      el('div', { class: 'grp' }, [
+        el('h4', { text: 'Date Added' }),
+        el('div', { class: 'card' }, [opt('addnew'), opt('addold')]),
+        el('p', { class: 'hintline', text: 'When it was put into the app.' })
+      ]),
+      el('div', { class: 'grp' }, [
+        el('h4', { text: 'Amount' }),
+        el('div', { class: 'card' }, [opt('high'), opt('low')]),
+        el('p', { class: 'hintline', text: "The receipt's total." })
+      ])
+    ]
+  });
+}
+
+/* ---------- searching ----------
+   Everything worth typing about a receipt, flattened into one string per
+   receipt and matched against. Nothing is asked of the database per keystroke:
+   the receipts come from the list the duplicate check already keeps, fetched
+   once and reused, and the blob is built once per receipt and kept on it.
+
+   Several renderings of the same thing go into the blob on purpose, so "120",
+   "120.00" and "£120.00" all find the same receipt, and a date can be typed as
+   a month name, a year or the way it is printed on screen. */
+const SEARCH_CAP = 25;
+
+/* The blob is worth keeping, but only for as long as it is still true: edit a
+   total and it is rebuilt. The folder name is deliberately left out of it and
+   matched live, because folders may not have loaded when the blob was first
+   built, and a cached "Unfiled" would then never correct itself. */
+function searchBlob(r) {
+  const key = [r.description, r.receipt_date, r.amount, r.vat, r.net, r.vat_rate].join('|');
+  if (r.__blob && r.__blobKey === key) return r.__blob;
+  const bits = [r.description || ''];
+
+  const d = String(r.receipt_date || '');
+  if (d) {
+    bits.push(d);                                    // 2026-08-15
+    const t = new Date(d + 'T12:00:00');
+    if (!isNaN(t)) {
+      const month = MONTHS[t.getMonth()];
+      bits.push(prettyDate(d), month, month.slice(0, 3),
+                month + ' ' + t.getFullYear(), String(t.getFullYear()));
+    }
+  }
+
+  const num = (v, suffix) => {
+    if (v === null || v === undefined || !isFinite(Number(v))) return;
+    const n = Number(v);
+    bits.push(String(n), n.toFixed(2), CURRENCY + n.toFixed(2), CURRENCY + String(n));
+    if (suffix) bits.push(String(n) + suffix, n.toFixed(2) + suffix);
+  };
+  num(r.amount); num(r.vat); num(r.net);
+  num(r.vat_rate, '%');
+  if (r.vat_rate !== null && r.vat_rate !== undefined) bits.push('vat ' + r.vat_rate + '%');
+
+  r.__blobKey = key;
+  r.__blob = bits.join(' \u241f ').toLowerCase();
+  return r.__blob;
+}
+
+const searchText = r =>
+  searchBlob(r) + ' \u241f ' + (folderName(r.folder_id) || 'Unfiled').toLowerCase();
+
+/* Every word has to match something, so "screwfix 120" narrows rather than
+   widens. Currency symbols and thousands separators are dropped from the terms
+   because nobody types them the same way twice. */
+function searchReceipts(list, query) {
+  const terms = String(query || '').toLowerCase()
+    .split(CURRENCY).join(' ')
+    .split(/\s+/).map(t => t.replace(/,/g, '').trim()).filter(Boolean);
+  if (!terms.length) return list;
+  return list.filter(r => {
+    const blob = searchText(r);
+    return terms.every(t => blob.includes(t));
+  });
+}
+
+let recentQuery = '';
+let searchSeq = 0;
+
 function renderRecent() {
   const box = $('#recent'), list = $('#recentlist');
   // the header is the way into the full list, so this section is always here,
   // even in a month with nothing in it yet
   box.classList.remove('hide');
   $('#recenthead').onclick = openRecent;
-  const latest = [...rows]
-    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
-    .slice(0, 4);
+  $('#recentsort').onclick = openSortMenu;
+  $('#recentsortlbl').textContent = SORTS[recentSort].label;
+
+  const input = $('#recentsearch'), clear = $('#recentclear');
+  if (input.value !== recentQuery) input.value = recentQuery;
+  clear.classList.toggle('hide', !recentQuery);
+  input.oninput = () => { recentQuery = input.value; renderRecent(); };
+  clear.onclick = () => { recentQuery = ''; input.value = ''; renderRecent(); input.focus(); };
+
+  if (recentQuery.trim()) { runSearch(); return; }
+
+  const latest = sortReceipts(rows, recentSort).slice(0, 4);
   list.innerHTML = '';
-  if (latest.length) latest.forEach(r => list.appendChild(receiptRow(r, true)));
+  if (latest.length) latest.forEach(r => list.appendChild(receiptRow(r, true, renderRecent)));
   else list.appendChild(el('p', { class: 'empty',
     text: 'Nothing added this month yet — tap to see everything.' }));
+}
+
+/* Searching looks past the month on screen — a receipt you are hunting for is
+   usually not in the month you happen to be standing in. */
+async function runSearch() {
+  const seq = ++searchSeq;
+  const q = recentQuery;
+  const list = $('#recentlist');
+
+  let all = dupRows;
+  if (!all || !folders.length) {
+    list.innerHTML = '';
+    list.appendChild(el('p', { class: 'empty', text: 'Searching…' }));
+    await loadFolders();                 // so a folder name is something to match on
+    all = await loadDupIndex();
+    if (seq !== searchSeq || q !== recentQuery) return;   // overtaken by later typing
+  }
+
+  const found = sortReceipts(searchReceipts(all, q), recentSort);
+  list.innerHTML = '';
+
+  if (!found.length) {
+    list.appendChild(el('p', { class: 'empty', text: 'No receipts found' }));
+    return;
+  }
+
+  found.slice(0, SEARCH_CAP).forEach(r =>
+    list.appendChild(receiptRow(r, true, renderRecent)));
+  if (found.length > SEARCH_CAP)
+    list.appendChild(el('p', { class: 'srchnote',
+      text: `Showing ${SEARCH_CAP} of ${found.length} matches — type a bit more to narrow it.` }));
+  signThumbs();
 }
 
 function renderGrid() {
@@ -1881,10 +2295,18 @@ async function openRecent() {
   await loadFolders();
   let list;
   try {
+    // the order is asked for up front so the 60 that come back are the right 60,
+    // then applied again below so the list reads the same whatever the server did
+    const by = (SORTS[recentSort] || SORTS.new).by;
+    const column = by === 'amount' ? 'amount' : by === 'added' ? 'created_at' : 'receipt_date';
     const res = await db.from('receipts').select('*')
-      .order('created_at', { ascending: false }).limit(60);
+      .order(column,
+             { ascending: recentSort === 'old' || recentSort === 'low' ||
+                          recentSort === 'addold',
+               nullsFirst: false })
+      .limit(60);
     if (res.error) throw res.error;
-    list = res.data || [];
+    list = sortReceipts(res.data || [], recentSort);
   } catch (e) { busy(false); toast(niceError(e), true); return; }
   busy(false);
 
@@ -1921,7 +2343,14 @@ async function openRecent() {
   const card = sheet({
     title: 'Recently added',
     sub: list.length ? String(list.length) : '',
-    body: [ list.length ? body : el('p', { class: 'empty', text: 'Nothing filed yet.' }) ]
+    body: [
+      el('button', { class: 'recsort', id: 'recentsort2',
+        onclick: () => { closeSheet(); openSortMenu(); } }, [
+        el('span', { text: 'Sorted by ' + SORTS[recentSort].what.toLowerCase() }),
+        el('span', { class: 'chev' })
+      ]),
+      list.length ? body : el('p', { class: 'empty', text: 'Nothing filed yet.' })
+    ]
   });
   card.appendChild(foot);
   rebuild();
@@ -2089,7 +2518,8 @@ function pickProjectInline(onPick) {
 /* ---------- the page ---------- */
 function showPlanning(on) {
   $('#plan').classList.toggle('hide', !on);
-  if (on) { $('#site').classList.add('hide'); $('#emails').classList.add('hide'); }
+  if (on) { $('#site').classList.add('hide'); $('#emails').classList.add('hide');
+             $('#stmt').classList.add('hide'); }
   $('#app').classList.toggle('hide', on);
   window.scrollTo(0, 0);
 }
@@ -2573,7 +3003,8 @@ async function loadSiteRecords() {
 
 function showSite(on) {
   $('#site').classList.toggle('hide', !on);
-  if (on) { $('#plan').classList.add('hide'); $('#emails').classList.add('hide'); }
+  if (on) { $('#plan').classList.add('hide'); $('#emails').classList.add('hide');
+             $('#stmt').classList.add('hide'); }
   $('#app').classList.toggle('hide', on);
   window.scrollTo(0, 0);
 }
@@ -2979,6 +3410,9 @@ let gmailToken = null;        // { access_token, expires } — this tab only
 let gmailAddress = null;      // the connected mailbox, for showing on screen
 let gmailClient = null;       // the Google Identity Services token client
 let emailList = [];
+let emailToken = null;        // Gmail's pointer to the next page of this same list
+let emailMore = false;        // whether Gmail says there is another page after it
+let emailBusy = false;        // a page is in flight; a second tap must not start another
 let emailImport = null;       // what is being brought in, while it is in flight
 
 const gmailConfigured = () => /^[\w.-]+\.apps\.googleusercontent\.com$/.test(GOOGLE_CLIENT_ID);
@@ -3068,6 +3502,8 @@ async function connectGmail() {
 function disconnectGmail() {
   const tok = gmailToken && gmailToken.access_token;
   gmailToken = null; gmailAddress = null; emailList = [];
+  emailToken = null; emailMore = false; emailBusy = false;
+  attachBytes.clear();                       // nothing of the mailbox is kept behind
   // hand the token back so it stops working immediately, rather than just
   // forgetting it on this device
   try { if (tok && window.google) google.accounts.oauth2.revoke(tok, () => {}); } catch { /* already gone */ }
@@ -3078,7 +3514,8 @@ function disconnectGmail() {
 /* ---------- the page ---------- */
 function showEmails(on) {
   $('#emails').classList.toggle('hide', !on);
-  if (on) { $('#plan').classList.add('hide'); $('#site').classList.add('hide'); }
+  if (on) { $('#plan').classList.add('hide'); $('#site').classList.add('hide');
+             $('#stmt').classList.add('hide'); }
   $('#app').classList.toggle('hide', on);
   window.scrollTo(0, 0);
 }
@@ -3095,39 +3532,75 @@ $('#emrefresh').onclick = () => {
   refreshEmails();
 };
 
-async function refreshEmails() {
-  busy(true, 'Loading your email…');
-  try {
-    const list = await gmailFetch('/messages?maxResults=25');
-    const ids = (list.messages || []).map(m => m.id);
-    const out = [];
-    for (let i = 0; i < ids.length; i++) {
-      busy(true, `Loading email ${i + 1} of ${ids.length}…`, (i + 1) / ids.length);
-      try {
-        const m = await gmailFetch('/messages/' + ids[i] +
-          '?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date');
-        const h = {};
-        ((m.payload && m.payload.headers) || []).forEach(x => { h[x.name.toLowerCase()] = x.value; });
-        out.push({
-          id: m.id, from: h.from || '', subject: h.subject || '(no subject)',
-          date: h.date || '', snippet: m.snippet || '',
-          hasAttachment: /\battachment\b/i.test(String(m.payload && m.payload.mimeType)) ||
-                         ((m.payload && m.payload.parts) || []).some(p => p.filename)
-        });
-      } catch (e) {
-        if (String(e.message) === 'gmail-disconnected') throw e;
-        // one unreadable message must not sink the whole list
-      }
+/* ---------- loading the list, a page at a time ----------
+   Gmail hands back 25 messages and a pointer to the next 25. The pointer is
+   kept, so "Load 25 more" continues through the same result set rather than
+   asking for the first 25 again — and nothing is fetched until it is asked for.
+   The list is only ever added to: the emails already on screen stay put, and a
+   page that fails changes nothing, so pressing the button again simply retries. */
+const EMAIL_PAGE = 25;
+
+/* One page: the ids, then each message's headers. `onStep` reports progress
+   without deciding where it is shown. */
+async function fetchEmailPage(token, onStep) {
+  const list = await gmailFetch('/messages?maxResults=' + EMAIL_PAGE +
+    (token ? '&pageToken=' + encodeURIComponent(token) : ''));
+  const ids = (list.messages || []).map(m => m.id);
+  const rows = [];
+  for (let i = 0; i < ids.length; i++) {
+    if (onStep) onStep(i + 1, ids.length);
+    try {
+      const m = await gmailFetch('/messages/' + ids[i] +
+        '?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date');
+      const h = {};
+      ((m.payload && m.payload.headers) || []).forEach(x => { h[x.name.toLowerCase()] = x.value; });
+      rows.push({
+        id: m.id, from: h.from || '', subject: h.subject || '(no subject)',
+        date: h.date || '', snippet: m.snippet || '',
+        hasAttachment: /\battachment\b/i.test(String(m.payload && m.payload.mimeType)) ||
+                       ((m.payload && m.payload.parts) || []).some(p => p.filename)
+      });
+    } catch (e) {
+      if (String(e.message) === 'gmail-disconnected') throw e;
+      // one unreadable message must not sink the whole page
     }
-    emailList = out;
-    busy(false);
-    paintEmails();
+  }
+  return { rows, next: list.nextPageToken || null };
+}
+
+async function loadEmails(append) {
+  if (emailBusy) return;                      // one page at a time, however many taps
+  emailBusy = true;
+
+  if (append) paintEmailFoot();               // the button says it is working
+  else { emailToken = null; busy(true, 'Loading your email…'); }
+
+  try {
+    const page = await fetchEmailPage(append ? emailToken : null, (n, of) => {
+      if (append) paintEmailFoot(n + ' of ' + of);
+      else busy(true, `Loading email ${n} of ${of}…`, n / of);
+    });
+
+    const seen = new Set(append ? emailList.map(m => m.id) : []);
+    const fresh = page.rows.filter(m => !seen.has(m.id));   // never the same email twice
+    emailList = append ? emailList.concat(fresh) : page.rows;
+    emailToken = page.next;
+    emailMore = !!page.next;
+    emailBusy = false;
+
+    if (append) { appendEmailRows(fresh); paintEmailFoot(); }
+    else { busy(false); paintEmails(); }
   } catch (e) {
+    // nothing already on screen is thrown away: the pointer is untouched, so the
+    // same page can simply be asked for again
+    emailBusy = false;
     busy(false);
-    paintEmails();
+    if (append) paintEmailFoot(); else paintEmails();
     toast(gmailError(e), true);
   }
 }
+
+const refreshEmails = () => loadEmails(false);
 
 const emailWho = from => {
   const m = String(from).match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
@@ -3184,16 +3657,64 @@ function paintEmails() {
     return;
   }
 
-  host.appendChild(el('div', { class: 'card' }, emailList.map(m =>
-    el('button', { class: 'emrow', onclick: () => openEmail(m) }, [
-      el('div', { class: 'emtop' }, [
-        el('b', { text: emailWho(m.from) }),
-        el('span', { text: emailWhen(m.date) })
-      ]),
-      el('div', { class: 'emsub', text: m.subject }),
-      el('div', { class: 'emsnip', text: m.snippet }),
-      m.hasAttachment ? el('span', { class: 'emclip', text: '📎 Attachment' }) : null
-    ]))));
+  host.appendChild(el('div', { class: 'card', id: 'emcard' }, emailList.map(emailRow)));
+  host.appendChild(el('div', { id: 'emfoot' }));
+  paintEmailFoot();
+}
+
+const emailRow = m => el('button', { class: 'emrow', onclick: () => openEmail(m) }, [
+  el('div', { class: 'emtop' }, [
+    el('b', { text: emailWho(m.from) }),
+    el('span', { text: emailWhen(m.date) })
+  ]),
+  el('div', { class: 'emsub', text: m.subject }),
+  el('div', { class: 'emsnip', text: m.snippet }),
+  m.hasAttachment ? el('span', { class: 'emclip', text: '📎 Attachment' }) : null
+]);
+
+/* New emails join the bottom of the list that is already there — the page does
+   not reload, nothing above moves, and only the new rows fade in. */
+function appendEmailRows(rows) {
+  const card = $('#emcard');
+  if (!card) { paintEmails(); return; }
+  rows.forEach(m => {
+    const row = emailRow(m);
+    row.classList.add('emnew');
+    card.appendChild(row);
+  });
+}
+
+/* Under the list: the way to ask for the next page, what it is doing while it
+   fetches one, or a quiet line saying that is all of them. */
+function paintEmailFoot(progress) {
+  const foot = $('#emfoot');
+  if (!foot) return;
+
+  if (!emailMore && !emailBusy) {
+    foot.innerHTML = '';
+    if (emailList.length)
+      foot.appendChild(el('p', { class: 'emend', id: 'emend', text: 'No more emails.' }));
+    return;
+  }
+
+  // The button is built once and then only ever updated: a control that is
+  // replaced under the finger flickers, and a tap landing as it is swapped can
+  // be counted twice.
+  let btn = $('#emmore');
+  if (!btn) {
+    foot.innerHTML = '';
+    btn = el('button', { class: 'loadmore', id: 'emmore',
+      onclick: () => loadEmails(true) }, [
+      el('span', { class: 'ldot' }),
+      el('span', { class: 'lbl' })
+    ]);
+    foot.appendChild(btn);
+  }
+  btn.disabled = emailBusy;                // taps while it works do nothing
+  btn.classList.toggle('working', emailBusy);
+  btn.querySelector('.lbl').textContent = emailBusy
+    ? (progress ? 'Loading ' + progress + '…' : 'Loading…')
+    : 'Load ' + EMAIL_PAGE + ' more';
 }
 
 /* ---------- one email ---------- */
@@ -3232,7 +3753,67 @@ const stripHtml = h => String(h)
   .replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
   .replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 
-const SUPPORTED_ATTACHMENT = /^(application\/pdf|image\/(jpeg|jpg|png|heic|heif|webp))$/i;
+/* What the app can actually open and file: a PDF, or a photograph of one.
+   Anything else is still listed — you can see it is there — but it has no
+   buttons, because neither viewing nor filing it would work. */
+const SUPPORTED_ATTACHMENT = /^(application\/pdf|image\/(jpeg|jpg|png|heic|heif|webp|gif|bmp|tiff))$/i;
+
+/* Gmail sometimes labels an attachment application/octet-stream. The file name
+   is the better witness, so both get a say. */
+function attachKind(file) {
+  const mime = String(file.mimeType || '').toLowerCase();
+  const name = String(file.filename || '');
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [, ''])[1].toLowerCase();
+  const isPdf = /pdf/.test(mime) || ext === 'pdf';
+  const isImage = /^image\//.test(mime) ||
+    ['jpg', 'jpeg', 'png', 'heic', 'heif', 'webp', 'gif', 'bmp', 'tif', 'tiff'].includes(ext);
+  const label = isPdf ? 'PDF'
+    : isImage ? (ext ? ext.toUpperCase().replace(/^JPEG$/, 'JPG') : 'Image')
+    : (ext ? ext.toUpperCase() : 'File');
+  return {
+    isPdf, isImage,
+    ok: isPdf || (isImage && SUPPORTED_ATTACHMENT.test(mime || ('image/' + ext))),
+    label,
+    type: isPdf ? 'application/pdf'
+        : isImage ? (/^image\//.test(mime) ? mime : 'image/' + (ext === 'jpg' ? 'jpeg' : ext))
+        : (mime || 'application/octet-stream')
+  };
+}
+
+const fileSizeText = n => !n ? ''
+  : n < 1024 ? n + ' B'
+  : n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' KB'
+  : (n / 1024 / 1024).toFixed(1) + ' MB';
+
+/* The bytes themselves, not just the name. Fetched once per attachment and kept
+   for as long as the email is open, so looking at an invoice and then filing it
+   does not download it twice. */
+const attachBytes = new Map();
+const MAX_ATTACHMENT = 30 * 1024 * 1024;
+const KEEP_ATTACHMENTS = 3;        // a handful of invoices, not a session's worth
+
+async function fetchAttachment(msg, file) {
+  const key = msg.id + '/' + (file.attachmentId || file.filename);
+  if (attachBytes.has(key)) return attachBytes.get(key);
+
+  if (file.size && file.size > MAX_ATTACHMENT)
+    throw new Error('That attachment is ' + fileSizeText(file.size)
+                  + ', which is too big to open on a phone.');
+
+  let bytes;
+  if (file.data) bytes = decodeB64Url(file.data);
+  else {
+    if (!file.attachmentId) throw new Error('That attachment is no longer available on this email.');
+    const att = await gmailFetch('/messages/' + msg.id + '/attachments/' + file.attachmentId);
+    if (!att || !att.data) throw new Error('The attachment could not be downloaded.');
+    bytes = decodeB64Url(att.data);
+  }
+  if (!bytes.length) throw new Error('That attachment came back empty.');
+  attachBytes.set(key, bytes);
+  while (attachBytes.size > KEEP_ATTACHMENTS)
+    attachBytes.delete(attachBytes.keys().next().value);
+  return bytes;
+}
 
 async function openEmail(m) {
   busy(true, 'Opening…');
@@ -3262,20 +3843,25 @@ async function openEmail(m) {
     : null;
 
   const attachRow = f => {
-    const ok = SUPPORTED_ATTACHMENT.test(f.mimeType);
+    const k = attachKind(f);
     const seen = f.attachmentId && already.has(f.attachmentId);
-    return el('button', { class: 'ematt', onclick: () => ok
-      ? importAttachment(m, full, h, f, !!seen)
-      : toast('Only PDFs and photos can be added to receipts', true) }, [
-      el('span', { class: 'emkind',
-        text: /pdf/i.test(f.mimeType) ? 'PDF' : /^image\//i.test(f.mimeType) ? 'IMG' : '?' }),
+    const bits = [k.label, fileSizeText(f.size)].filter(Boolean);
+    if (!k.ok) bits.push('cannot be opened here');
+
+    return el('div', { class: 'ematt' }, [
+      el('span', { class: 'emkind' + (k.isPdf ? ' pdf' : k.isImage ? ' img' : ''),
+                   text: k.isPdf ? 'PDF' : k.isImage ? 'IMG' : '?' }),
       el('div', { class: 'meta' }, [
-        el('b', { text: f.filename }),
-        el('span', { text: (f.size ? Math.max(1, Math.round(f.size / 1024)) + ' KB' : '')
-                          + (ok ? '' : '  ·  not a PDF or photo') })
+        el('b', { text: f.filename || 'Attachment' }),
+        el('span', { text: bits.join('  ·  ') })
       ]),
       seen ? el('span', { class: 'emdone', text: 'Imported' }) : null,
-      ok ? el('span', { class: 'chev' }) : null
+      k.ok ? el('div', { class: 'emacts' }, [
+        el('button', { class: 'emview', text: 'View',
+          onclick: () => openAttachment(m, full, h, f, !!seen) }),
+        el('button', { class: 'emadd', text: 'Add to Receipts',
+          onclick: () => importAttachment(m, full, h, f, !!seen) })
+      ]) : null
     ]);
   };
 
@@ -3290,7 +3876,8 @@ async function openEmail(m) {
       bodyText ? el('div', { class: 'embody', text: bodyText }) : null,
       el('div', {}, [
         el('label', { text: parts.files.length
-          ? 'Attachments — tap one to add it to receipts' : 'Attachments' }),
+          ? 'Attachments — View to read it first, or add it straight to receipts'
+          : 'Attachments' }),
         parts.files.length
           ? el('div', { class: 'card' }, parts.files.map(attachRow))
           : el('p', { class: 'hintline', text: 'This email has no attachments.' })
@@ -3300,8 +3887,180 @@ async function openEmail(m) {
   });
 }
 
+/* ---------- looking at the attachment ----------
+   The whole point is being able to read the small print — the total, the invoice
+   number, the date — before deciding anything. A PDF is rendered page by page at
+   enough resolution to stand being zoomed into; a photo is shown as it is. Both
+   use the same zoom and pan engine as the receipt viewer. */
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js', 15000)
+    .then(() => {
+      if (!window.pdfjsLib) throw new Error('unavailable');
+      try {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+      } catch { /* some builds have no worker to point at */ }
+      return window.pdfjsLib;
+    });
+}
+
+/* ---------- the document viewer ----------
+   One viewer, whatever the document is and wherever it came from: a Gmail
+   attachment, a statement, anything else with bytes and a name. A PDF renders
+   page by page with page controls; an image is shown as it is; both pinch,
+   zoom and pan with the same engine the receipt viewer uses.
+
+   `action` is optional — give it { label, run } and a button appears beside
+   Close; leave it out and the viewer is simply a way of reading something. */
+async function showDocument(bytes, name, mime, action) {
+  const k = attachKind({ filename: name, mimeType: mime });
+
+  const overlay = el('div', { class: 'viewer', id: 'aviewer' });
+  const body = el('div', { class: 'vbody', id: 'vbody' });
+  let objectUrl = null;
+
+  const close = () => {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    overlay.remove();
+  };
+
+  overlay.appendChild(el('div', { class: 'vhead' }, [
+    el('button', { class: 'icb', id: 'avclose', 'aria-label': 'Close', onclick: close,
+      html: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>' }),
+    el('b', { text: name || 'Document' }),
+    el('button', { class: 'icb vreset', 'aria-label': 'Reset zoom',
+      html: '<svg viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 012-2h3M16 3h3a2 2 0 012 2v3M21 16v3a2 2 0 01-2 2h-3M8 21H5a2 2 0 01-2-2v-3"/></svg>' })
+  ]));
+  overlay.appendChild(body);
+
+  // page controls are only built for a PDF with more than one page
+  const prev = el('button', { class: 'icb', id: 'avprev', 'aria-label': 'Previous page',
+    html: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>' });
+  const next = el('button', { class: 'icb', id: 'avnext', 'aria-label': 'Next page',
+    html: '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' });
+  const counter = el('b', { id: 'avpage', text: '' });
+  const zoomOut = el('button', { class: 'icb', id: 'avzoomout', 'aria-label': 'Zoom out', text: '−' });
+  const zoomIn  = el('button', { class: 'icb', id: 'avzoomin',  'aria-label': 'Zoom in',  text: '+' });
+  const zoomPair = el('div', { class: 'vzoom' }, [zoomOut, zoomIn]);
+  const bar = el('div', { class: 'vpages', id: 'avbar' },
+    k.isPdf ? [prev, counter, next, zoomPair] : [zoomPair]);
+  overlay.appendChild(bar);
+
+  overlay.appendChild(el('div', { class: 'vfoot' }, [
+    el('button', { class: 'btn btn-ghost', id: 'avback', text: 'Close', onclick: close }),
+    action ? el('button', { class: 'btn btn-primary', id: 'avadd', text: action.label,
+      onclick: () => { close(); action.run(bytes); } }) : null
+  ]));
+
+  document.body.appendChild(overlay);
+
+  let gestures = null;
+  const bindZoomButtons = () => {
+    zoomIn.onclick  = () => gestures && gestures.zoomBy(1.5);
+    zoomOut.onclick = () => gestures && gestures.zoomBy(1 / 1.5);
+  };
+
+  if (k.isPdf) {
+    let pdf = null, page = 1, rendering = false;
+    counter.textContent = 'Loading…';
+    prev.disabled = next.disabled = true;
+
+    const drawPage = async n => {
+      if (rendering || !pdf) return;
+      rendering = true;
+      try {
+        const pg = await pdf.getPage(n);
+        // The page is drawn at well above the size it is shown at, so pinching
+        // into the small print finds real pixels rather than a blown-up blur:
+        // screen width x the device's own pixel ratio x room to zoom. Capped by
+        // total pixels as well as by scale, so a big page cannot exhaust a phone.
+        const fit = pg.getViewport({ scale: 1 });
+        const wide = Math.max(320, body.clientWidth || 360);
+        const dpr = Math.min(3, window.devicePixelRatio || 1);
+        let scale = Math.min(5, Math.max(1.5, (wide * dpr * 2.5) / fit.width));
+        const MAXPX = 6e6;
+        if (fit.width * fit.height * scale * scale > MAXPX)
+          scale = Math.sqrt(MAXPX / (fit.width * fit.height));
+        const vp = pg.getViewport({ scale });
+        const canvas = el('canvas', { id: 'avcanvas' });
+        canvas.width = Math.round(vp.width);
+        canvas.height = Math.round(vp.height);
+        await pg.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        body.innerHTML = '';
+        body.appendChild(canvas);
+        overlay.classList.remove('zoomed');
+        gestures = bindZoomGestures(overlay, canvas, body);
+        bindZoomButtons();
+        counter.textContent = 'Page ' + n + ' of ' + pdf.numPages;
+        prev.disabled = n <= 1;
+        next.disabled = n >= pdf.numPages;
+      } catch {
+        body.innerHTML = '';
+        body.appendChild(el('p', { class: 'vmsg', text: 'That page could not be drawn.' }));
+      } finally {
+        rendering = false;
+      }
+    };
+
+    try {
+      const lib = await loadPdfJs();
+      pdf = await lib.getDocument({ data: bytes.slice(0) }).promise;
+      page = 1;
+      await drawPage(1);
+      prev.onclick = () => { if (page > 1) { page--; drawPage(page); } };
+      next.onclick = () => { if (page < pdf.numPages) { page++; drawPage(page); } };
+    } catch {
+      counter.textContent = '';
+      bar.classList.add('hide');
+      body.innerHTML = '';
+      body.appendChild(el('p', { class: 'vmsg', id: 'avfail', text:
+        'This PDF could not be displayed here — the viewer needs a connection '
+        + 'the first time it is used.' }));
+    }
+  } else {
+    const blob = new Blob([bytes], { type: k.type });
+    objectUrl = URL.createObjectURL(blob);
+    const img = el('img', { id: 'avimg', src: objectUrl, alt: name || 'Document',
+                            decoding: 'async' });
+    img.onerror = () => {
+      body.innerHTML = '';
+      body.appendChild(el('p', { class: 'vmsg', id: 'avfail',
+        text: 'That image could not be displayed.' }));
+    };
+    body.appendChild(img);
+    gestures = bindZoomGestures(overlay, img, body);
+    bindZoomButtons();
+  }
+}
+/* The Gmail attachment route into that viewer: fetch the bytes, then show them,
+   with Add to Receipts wired to the existing import. */
+async function openAttachment(msg, full, headers, file, alreadyImported) {
+  busy(true, 'Fetching the attachment…');
+  let bytes;
+  try {
+    bytes = await fetchAttachment(msg, file);
+  } catch (e) {
+    busy(false); toast(gmailError(e), true); if (!gmailLive()) paintEmails(); return;
+  }
+  busy(false);
+  await showDocument(bytes, file.filename || 'Attachment', file.mimeType, {
+    label: 'Add to Receipts',
+    run: b => importAttachment(msg, full, headers, file, alreadyImported, b)
+  });
+}
+
+/* The two Gmail columns on the receipts table are optional extras, added by
+   sql/gmail-import-setup.sql. Postgrest says so in a recognisable way when they
+   are not there, and the app can carry on without them. */
+function missingGmailColumn(err) {
+  const m = String((err && (err.message || err.hint)) || '');
+  return (err && err.code === 'PGRST204') ||
+         (/schema cache/i.test(m) && /gmail_(message|attachment)_id/i.test(m));
+}
+
 /* ---------- attachment → the existing receipt form ---------- */
-async function importAttachment(msg, full, headers, file, alreadyImported) {
+async function importAttachment(msg, full, headers, file, alreadyImported, preloaded) {
   if (alreadyImported) {
     const go = await ask('Already imported',
       `"${file.filename}" from this email has already been added to your receipts. `
@@ -3309,23 +4068,16 @@ async function importAttachment(msg, full, headers, file, alreadyImported) {
     if (!go) return;
   }
 
+  const k = attachKind(file);
   busy(true, 'Fetching the attachment…');
   try {
-    let bytes;
-    if (file.data) bytes = decodeB64Url(file.data);
-    else {
-      const att = await gmailFetch('/messages/' + msg.id + '/attachments/' + file.attachmentId);
-      if (!att || !att.data) throw new Error('The attachment could not be downloaded.');
-      bytes = decodeB64Url(att.data);
-    }
-    if (!bytes.length) throw new Error('That attachment came back empty.');
+    const bytes = preloaded || await fetchAttachment(msg, file);
 
-    const blob = new File([bytes], file.filename,
-      { type: /pdf/i.test(file.mimeType) ? 'application/pdf' : file.mimeType });
+    const blob = new File([bytes], file.filename || 'attachment', { type: k.type });
 
     // what the receipt form should open with. The date comes from the email;
-    // the total and invoice number are only ever suggestions from the reader,
-    // and VAT is left entirely to the form's own 20% default.
+    // the total and invoice number are only ever suggestions read out of the
+    // document, and VAT is left entirely to the form's own 20% default.
     emailImport = {
       messageId: msg.id,
       attachmentId: file.attachmentId || file.filename,
@@ -3352,57 +4104,508 @@ async function importAttachment(msg, full, headers, file, alreadyImported) {
   }
 }
 
-/* Before an imported receipt is filed, look for one that is already there.
-   A matching total on its own is never proof — two real invoices can come to
-   the same penny — so this only ever warns and lets the choice be made. */
-async function duplicateWarning(amt, invoiceNo, dateStr) {
-  if (!emailImport) return true;
-  let rows = [];
+/* ============================================================
+   POSSIBLE DUPLICATES
+   Two receipts with the same total are not the same receipt. One job can be
+   paid for at the counter and again online; two suppliers can land on the same
+   round figure in the same week. So nothing here ever refuses a receipt — it
+   shows you the one it found and lets you decide.
+
+   The check runs while you type the total, so the warning appears and clears as
+   the figure changes, and again at the moment you save.
+   ============================================================ */
+let dupRows = null, dupRowsAt = 0;
+// a function declaration, not a const: loadMonth() is defined above this and calls it
+function forgetDupIndex() { try { dupRows = null; } catch { /* not reached yet */ } }
+
+async function loadDupIndex(force) {
+  if (!force && dupRows && Date.now() - dupRowsAt < 120000) return dupRows;
   try {
     const res = await db.from('receipts').select('*');
     if (res.error) throw res.error;
-    rows = res.data || [];
-  } catch { return true; }        // never block a save on the check itself
+    dupRows = res.data || [];
+    dupRowsAt = Date.now();
+  } catch { dupRows = dupRows || []; }   // never block on the check itself
+  return dupRows;
+}
 
-  const sameFile = rows.filter(r =>
-    r.gmail_message_id === emailImport.messageId &&
-    r.gmail_attachment_id === emailImport.attachmentId);
-  const sameInvoice = invoiceNo
-    ? rows.filter(r => r.invoice_no && String(r.invoice_no).toLowerCase() === String(invoiceNo).toLowerCase())
-    : [];
-  const sameTotal = amt !== null && amt !== undefined
-    ? rows.filter(r => Number(r.amount) === Number(amt)) : [];
+const pence = n => Math.round(Number(n) * 100);
 
-  if (!sameFile.length && !sameInvoice.length && !sameTotal.length) return true;
+/* The strongest thing found, or nothing. Invoice number beats total, and both
+   together is stronger still. */
+async function duplicateMatch(amt, invoiceNo, excludeId) {
+  const hasAmt = amt !== null && amt !== undefined && isFinite(Number(amt));
+  const inv = invoiceNo ? String(invoiceNo).trim().toLowerCase() : '';
+  if (!hasAmt && !inv) return null;
 
-  let title, lines;
-  if (sameFile.length) {
-    title = 'Already imported';
-    lines = ['This exact attachment has already been brought in from this email.'];
-  } else if (sameInvoice.length) {
-    title = 'Possible duplicate — same invoice number';
-    lines = ['An existing receipt has invoice number ' + invoiceNo + '.'];
-  } else {
-    title = 'Possible duplicate';
-    lines = ['An existing receipt has the same total: ' + money(amt) + '.'];
+  const rows = (await loadDupIndex())
+    .filter(r => !excludeId || String(r.id) !== String(excludeId));
+
+  const sameInvoice = inv
+    ? rows.filter(r => r.invoice_no && String(r.invoice_no).trim().toLowerCase() === inv) : [];
+  const sameTotal = hasAmt
+    ? rows.filter(r => r.amount !== null && r.amount !== undefined &&
+                       pence(r.amount) === pence(amt)) : [];
+  const both = sameInvoice.filter(r => sameTotal.includes(r));
+
+  if (both.length)        return { kind: 'both',    match: both[0],        rows: both,        amt, invoiceNo };
+  if (sameInvoice.length) return { kind: 'invoice', match: sameInvoice[0], rows: sameInvoice, amt, invoiceNo };
+  if (sameTotal.length)   return { kind: 'total',   match: sameTotal[0],   rows: sameTotal,   amt, invoiceNo };
+  return null;
+}
+
+const dupTitle = kind =>
+  kind === 'both'    ? 'Possible duplicate — same invoice number and same total'
+: kind === 'invoice' ? 'Possible duplicate — same invoice number'
+                     : 'Possible duplicate';
+
+function dupHeadline(m) {
+  if (m.kind === 'total')
+    return 'This receipt has the same total as an existing receipt: ' + money(m.amt) + '.';
+  if (m.kind === 'invoice')
+    return 'An existing receipt has invoice number ' + m.invoiceNo + '.';
+  return 'An existing receipt has invoice number ' + m.invoiceNo
+       + ' and the same total: ' + money(m.amt) + '.';
+}
+
+const dupLine = r => [r.description || 'Receipt',
+                      prettyDate(String(r.receipt_date)),
+                      r.amount != null ? money(r.amount) : null,
+                      folderName(r.folder_id) || 'Unfiled'].filter(Boolean).join('  ·  ');
+
+/* The panel that sits under the total on the form: what was found, and a way to
+   go and look at it before deciding. */
+function paintDupBox(box, m) {
+  box.innerHTML = '';
+  box.classList.toggle('hide', !m);
+  if (!m) return;
+
+  const r = m.match;
+  const isPdf = r.file_type === 'application/pdf';
+  const thumb = (!r.image_cleared && !isPdf)
+    ? el('img', { class: 'dupimg', alt: '', decoding: 'async' })
+    : el('div', { class: 'dupfile', text: isPdf ? 'PDF' : '—' });
+
+  if (thumb.tagName === 'IMG') {
+    const cached = thumbs.get(r.file_path);
+    if (cached) thumb.src = cached;
+    else db.storage.from(BUCKET).createSignedUrl(r.file_path, 3600).then(({ data }) => {
+      const u = data && data.signedUrl;
+      if (u) { thumbs.set(r.file_path, u); thumb.src = u; }
+    }).catch(() => {});
   }
 
-  const match = (sameFile[0] || sameInvoice[0] || sameTotal[0]);
-  if (match) {
-    lines.push('');
-    lines.push([match.description || 'Receipt',
-                prettyDate(String(match.receipt_date)),
-                match.amount != null ? money(match.amount) : null]
-                .filter(Boolean).join('  ·  '));
-    if (sameTotal.length && !sameFile.length && !sameInvoice.length &&
-        String(match.receipt_date) === String(dateStr))
-      lines.push('It is also dated the same day.');
-  }
-  if (!sameFile.length)
-    lines.push('', 'Two different invoices can legitimately come to the same amount, '
-                 + 'so this is only a warning.');
+  const more = m.rows.length > 1
+    ? ' (' + m.rows.length + ' receipts match)' : '';
 
-  return await ask(title, lines.join('\n'), 'Add anyway');
+  box.appendChild(thumb);
+  box.appendChild(el('div', { class: 'dupmeta' }, [
+    el('b', { text: dupTitle(m.kind) }),
+    el('span', { text: dupHeadline(m) + more }),
+    el('span', { text: dupLine(r) }),
+    el('span', { class: 'hintline', text:
+      'Two different invoices can legitimately come to the same amount, so this is '
+      + 'only a warning — saving is still up to you.' }),
+    el('button', { class: 'dupopen', text: 'View that receipt',
+      onclick: () => openReceipt(r) })
+  ]));
+}
+
+/* The question asked at the moment of saving. Always answerable, never final. */
+async function duplicateWarning(amt, invoiceNo, dateStr, excludeId) {
+  // the very same email attachment twice is its own, plainer case
+  if (emailImport) {
+    const rows = await loadDupIndex();
+    const sameFile = rows.filter(r =>
+      r.gmail_message_id === emailImport.messageId &&
+      r.gmail_attachment_id === emailImport.attachmentId);
+    if (sameFile.length) {
+      const lines = ['This exact attachment has already been added to your receipts.', '',
+                     dupLine(sameFile[0])];
+      return await ask('Already imported', lines.join('\n'), 'Add anyway');
+    }
+  }
+
+  const m = await duplicateMatch(amt, invoiceNo, excludeId);
+  if (!m) return true;
+
+  const lines = [dupHeadline(m)];
+  if (m.rows.length > 1) lines.push(m.rows.length + ' receipts already match.');
+  lines.push('', dupLine(m.match));
+  if (m.kind === 'total' && String(m.match.receipt_date) === String(dateStr))
+    lines.push('It is also dated the same day.');
+  lines.push('', 'Two different invoices can legitimately come to the same amount, '
+               + 'so this is only a warning.');
+
+  return await ask(dupTitle(m.kind), lines.join('\n'), 'Add anyway');
+}
+
+
+/* ============================================================
+   STATEMENTS
+   Bank, card and account statements — documents you keep, not figures you
+   count. They are their own thing: nothing here is a receipt, nothing appears
+   on the calendar, in a total, in the VAT, in Recently Added or in a folder,
+   and no receipt has ever needed a statement to exist.
+
+   The only place the two meet is by choice: the receipt PDF export can be
+   asked to append selected statements after the receipts.
+   ============================================================ */
+let statements = [];
+let stmtKind = null;                   // a category, or null for all
+let stmtTable = null;                  // null unknown · true ready · false not created yet
+
+const STMT_DIR = 'statements';         // its own folder inside the private bucket
+const STMT_KINDS = ['Bank', 'Credit card', 'Account', 'Other'];
+const STMT_SQL_HINT = 'Statements needs its table adding to Supabase. '
+  + 'The setup SQL came with this update — run sql/statements-setup.sql in the '
+  + 'SQL editor, then come back.';
+
+function stmtMissing(err) {
+  const m = String((err && (err.message || err.msg)) || err || '');
+  const code = (err && err.code) || '';
+  return code === '42P01' || code === 'PGRST205' ||
+         /relation .*statements.* does not exist|could not find the table .*statements/i.test(m);
+}
+
+async function loadStatements() {
+  const res = await db.from('statements').select('*');
+  if (res.error) {
+    if (stmtMissing(res.error)) { stmtTable = false; statements = []; return false; }
+    toast(niceError(res.error), true);
+    return false;
+  }
+  stmtTable = true;
+  // newest period first: the one you want is nearly always the most recent
+  statements = (res.data || []).sort((a, b) =>
+    String(b.period_start).localeCompare(String(a.period_start)) ||
+    String(b.created_at).localeCompare(String(a.created_at)));
+  return true;
+}
+
+function showStatements(on) {
+  $('#stmt').classList.toggle('hide', !on);
+  if (on) {
+    $('#plan').classList.add('hide');
+    $('#site').classList.add('hide');
+    $('#emails').classList.add('hide');
+  }
+  $('#app').classList.toggle('hide', on);
+  window.scrollTo(0, 0);
+}
+
+async function openStatements() {
+  busy(true, 'Loading statements…');
+  await loadPlanning().catch(() => {});        // jobs, for the optional project
+  const ok = await loadStatements();
+  busy(false);
+  showStatements(true);
+  if (!ok && stmtTable === false) {
+    $('#stlist').innerHTML = '';
+    $('#stlist').appendChild(el('p', { class: 'empty', text: STMT_SQL_HINT }));
+    return;
+  }
+  if (!ok) { showStatements(false); return; }
+  paintStatements();
+}
+
+$('#stback').onclick = () => showStatements(false);
+$('#addstatement').onclick = () => openStatementForm(null);
+$('#stfilter').onclick = () => {
+  const used = [...new Set(statements.map(s => s.category).filter(Boolean))];
+  sheet({
+    title: 'Show',
+    body: [ el('div', { class: 'card' }, [
+      el('button', { class: 'ditem' + (stmtKind ? '' : ' on'), id: 'stall',
+        onclick: () => { stmtKind = null; closeSheet(); paintStatements(); } }, [
+        el('span', { class: 'lbl', text: 'All statements' })
+      ]),
+      ...used.map(k => el('button', {
+        class: 'ditem' + (stmtKind === k ? ' on' : ''),
+        onclick: () => { stmtKind = k; closeSheet(); paintStatements(); } }, [
+        el('span', { class: 'lbl', text: k })
+      ]))
+    ]) ]
+  });
+};
+
+const stmtIsPdf = s => s.file_type === 'application/pdf' ||
+                       /\.pdf$/i.test(String(s.file_path || ''));
+
+/* "August 2026", or "1 Aug – 31 Aug 2026" when an end date was given */
+function stmtPeriod(s) {
+  const a = prettyDate(String(s.period_start));
+  return s.period_end ? a + '  –  ' + prettyDate(String(s.period_end)) : a;
+}
+
+const stmtLine = s => [ s.category || 'Statement',
+                        stmtIsPdf(s) ? 'PDF' : 'Image',
+                        s.project_id ? projectName(s.project_id) : null
+                      ].filter(Boolean).join('  ·  ');
+
+function paintStatements() {
+  const shown = stmtKind ? statements.filter(s => s.category === stmtKind) : statements;
+
+  $('#stcount').textContent = String(shown.length);
+  $('#stscope').textContent = stmtKind || 'All';
+
+  const host = $('#stlist');
+  host.innerHTML = '';
+
+  if (!shown.length) {
+    host.appendChild(el('p', { class: 'empty', text: statements.length
+      ? 'Nothing of that kind yet.'
+      : 'No statements yet. Add a bank or card statement below — they are kept '
+        + 'separately from your receipts, and can be attached to a receipt PDF '
+        + 'when you export one.' }));
+    return;
+  }
+
+  host.appendChild(el('p', { class: 'sthead',
+    text: 'Kept separately from receipts. Newest period first.' }));
+
+  host.appendChild(el('div', { class: 'card' }, shown.map(s =>
+    el('div', { class: 'strow' }, [
+      el('span', { class: 'stkind' + (stmtIsPdf(s) ? ' pdf' : ' img'),
+                   text: stmtIsPdf(s) ? 'PDF' : 'IMG' }),
+      el('div', { class: 'meta' }, [
+        el('b', { text: s.title }),
+        el('span', { text: stmtPeriod(s) }),
+        el('span', { text: stmtLine(s) })
+      ]),
+      el('div', { class: 'stacts' }, [
+        el('button', { class: 'stopen', text: 'Open', onclick: () => openStatement(s) }),
+        el('button', { class: 'stget',  text: 'Download', onclick: () => downloadStatement(s) }),
+        el('button', { class: 'stedit', text: 'Edit', onclick: () => openStatementForm(s) }),
+        el('button', { class: 'stdel',  text: 'Delete', onclick: () => deleteStatement(s) })
+      ])
+    ]))));
+}
+
+/* A signed link to the file itself, fetched fresh: these are private. */
+async function statementUrl(s) {
+  const { data, error } = await db.storage.from(BUCKET).createSignedUrl(s.file_path, 3600);
+  if (error) throw error;
+  const u = data && data.signedUrl;
+  if (!u) throw new Error('That statement could not be found in storage.');
+  return u;
+}
+
+/* Opens in the viewer the app already has: the PDF one for a PDF, the picture
+   one for a photograph. Nothing new was built for this. */
+async function openStatement(s) {
+  busy(true, 'Opening…');
+  let bytes;
+  try {
+    const url = await statementUrl(s);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('That statement could not be downloaded.');
+    bytes = new Uint8Array(await res.arrayBuffer());
+    if (!bytes.length) throw new Error('That statement file is empty.');
+  } catch (e) {
+    busy(false);
+    toast(niceError(e), true);
+    return;
+  }
+  busy(false);
+  showDocument(bytes, s.title, stmtIsPdf(s) ? 'application/pdf' : (s.file_type || 'image/jpeg'));
+}
+
+/* The original file, exactly as it was put in — a PDF stays a PDF. */
+async function downloadStatement(s) {
+  busy(true, 'Fetching…');
+  try {
+    const url = await statementUrl(s);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('That statement could not be downloaded.');
+    const blob = await res.blob();
+    busy(false);
+
+    const ext = (String(s.file_path).split('.').pop() || 'pdf').toLowerCase();
+    const name = s.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.' + ext;
+    const u = URL.createObjectURL(blob);
+    const a = el('a', { href: u, download: name });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 15000);
+    toast('Statement downloaded');
+  } catch (e) {
+    busy(false);
+    toast(niceError(e), true);
+  }
+}
+
+async function deleteStatement(s) {
+  const ok = await ask('Delete this statement?',
+    `"${s.title}" will be removed for everyone. This cannot be undone.`, 'Delete');
+  if (!ok) return;
+  busy(true, 'Deleting…');
+  try {
+    const res = await db.from('statements').delete().eq('id', s.id);
+    if (res.error) throw res.error;
+    await db.storage.from(BUCKET).remove([s.file_path]).catch(() => {});
+    thumbs.delete(s.file_path);
+    await loadStatements();
+    busy(false);
+    paintStatements();
+    toast('Statement deleted');
+  } catch (e) {
+    busy(false);
+    toast(niceError(e), true);
+  }
+}
+
+function openStatementForm(rec) {
+  const editing = !!rec;
+  let projectId = editing ? rec.project_id : null;
+  let category = editing ? (rec.category || null) : 'Bank';
+  let chosen = null;                       // a File waiting to go up
+
+  const title = el('input', { type: 'text', id: 'st_title', maxlength: '120',
+    placeholder: 'e.g. Barclays — August', value: editing ? rec.title : '' });
+  const from = el('input', { type: 'date', id: 'st_from',
+    value: editing ? String(rec.period_start) : ymd(new Date()) });
+  const to = el('input', { type: 'date', id: 'st_to',
+    value: editing && rec.period_end ? String(rec.period_end) : '' });
+
+  const kinds = el('div', { class: 'statuses', id: 'st_kinds' });
+  const paintKinds = () => {
+    kinds.innerHTML = '';
+    STMT_KINDS.forEach(k => kinds.appendChild(el('button', {
+      class: category === k ? 'on' : '', text: k,
+      onclick: () => { category = k; paintKinds(); } })));
+  };
+  paintKinds();
+
+  const jobBtn = el('button', { class: 'pickproject', id: 'st_job' });
+  const paintJob = () => {
+    jobBtn.innerHTML = '';
+    const p = projectById(projectId);
+    jobBtn.appendChild(el('span', { class: 'lbl', text: p ? p.name : 'None' }));
+    jobBtn.appendChild(el('span', { class: 'chev' }));
+  };
+  jobBtn.onclick = () => pickProjectInline(id => { projectId = id; paintJob(); });
+  paintJob();
+
+  const fileLine = el('div', { class: 'pvfile', id: 'st_file' });
+  const paintFile = () => {
+    fileLine.innerHTML = '';
+    const name = chosen ? chosen.name
+      : editing ? String(rec.file_path).split('/').pop() : null;
+    const size = chosen ? chosen.size : (editing ? rec.file_size : null);
+    fileLine.appendChild(el('div', {}, [
+      el('b', { text: name || 'No document chosen yet' }),
+      el('span', { text: name
+        ? [ (chosen ? (/pdf/i.test(chosen.type) ? 'PDF' : 'Image')
+                    : (stmtIsPdf(rec) ? 'PDF' : 'Image')),
+            size ? fileSizeText(size) : null,
+            editing && !chosen ? 'already stored' : null ].filter(Boolean).join('  ·  ')
+        : 'PDF, JPG or PNG' })
+    ]));
+  };
+  paintFile();
+
+  const picker = $('#stfile');
+  picker.onchange = e => {
+    const f = (e.target.files || [])[0];
+    picker.value = '';
+    if (!f) return;
+    if (!/^image\/(jpeg|jpg|png|heic|heif|webp)$|^application\/pdf$/i.test(f.type) &&
+        !/\.(pdf|jpe?g|png|heic|heif|webp)$/i.test(f.name)) {
+      toast('Statements can be a PDF, JPG or PNG', true);
+      return;
+    }
+    chosen = f;
+    paintFile();
+  };
+  const pickBtn = el('button', { class: 'btn btn-ghost btn-full', id: 'st_pick',
+    text: editing ? 'Replace document' : '+  Choose document',
+    onclick: () => { picker.value = ''; picker.click(); } });
+
+  const save = el('button', { class: 'btn btn-primary', id: 'st_save',
+    text: editing ? 'Save changes' : 'Save statement' });
+
+  save.onclick = async () => {
+    const what = title.value.trim();
+    if (!what) { title.focus(); toast('Give the statement a name', true); return; }
+    if (!from.value) { from.focus(); toast('Pick the statement date or period start', true); return; }
+    if (to.value && to.value < from.value) {
+      to.focus(); toast('The period ends before it starts', true); return;
+    }
+    if (!editing && !chosen) { toast('Choose the statement document', true); return; }
+
+    save.disabled = true;
+    busy(true, editing ? 'Saving…' : 'Uploading statement…');
+    let uploaded = null;
+    try {
+      const payload = {
+        title: what,
+        period_start: from.value,
+        period_end: to.value || null,
+        category: category || null,
+        project_id: projectId || null
+      };
+
+      if (chosen) {
+        const ext = (chosen.name.split('.').pop() || 'pdf').toLowerCase().slice(0, 5);
+        const [y, m] = from.value.split('-');
+        const path = `${STMT_DIR}/${y}/${m}/${crypto.randomUUID()}.${ext}`;
+        const type = /pdf/i.test(chosen.type) || ext === 'pdf'
+          ? 'application/pdf' : (chosen.type || 'image/jpeg');
+        const put = await db.storage.from(BUCKET)
+          .upload(path, chosen, { contentType: type, upsert: false });
+        if (put.error) throw put.error;
+        uploaded = path;
+        payload.file_path = path;
+        payload.file_type = type;
+        payload.file_size = chosen.size;
+      }
+
+      const old = editing ? rec.file_path : null;
+      if (editing) {
+        const up = await db.from('statements').update(payload).eq('id', rec.id);
+        if (up.error) throw up.error;
+        // the document it replaced is no longer referenced by anything
+        if (uploaded && old && old !== uploaded) {
+          await db.storage.from(BUCKET).remove([old]).catch(() => {});
+          thumbs.delete(old);
+        }
+      } else {
+        const ins = await db.from('statements').insert(Object.assign({}, payload,
+          { created_by: session.user.id, created_by_name: session.user.email }));
+        if (ins.error) throw ins.error;
+      }
+
+      await loadStatements();
+      busy(false); save.disabled = false;
+      closeSheet();
+      paintStatements();
+      toast(editing ? 'Statement updated' : 'Statement saved');
+    } catch (e) {
+      // a half-finished save must not leave a document stranded in storage
+      if (uploaded) await db.storage.from(BUCKET).remove([uploaded]).catch(() => {});
+      busy(false); save.disabled = false;
+      toast(stmtMissing(e) ? STMT_SQL_HINT : niceError(e), true);
+    }
+  };
+
+  sheet({
+    title: editing ? 'Edit statement' : 'New statement',
+    sub: editing ? stmtPeriod(rec) : '',
+    body: [
+      el('div', {}, [el('label', { for: 'st_title', text: 'Name' }), title]),
+      el('div', {}, [el('label', { text: 'Kind' }), kinds]),
+      el('div', { class: 'row2' }, [
+        el('div', {}, [el('label', { for: 'st_from', text: 'Date / period from' }), from]),
+        el('div', {}, [el('label', { for: 'st_to', text: 'Period to (optional)' }), to])
+      ]),
+      el('div', {}, [el('label', { text: 'Job (optional)' }), jobBtn]),
+      el('div', {}, [el('label', { text: 'Document' }), fileLine, pickBtn])
+    ],
+    foot: [
+      el('button', { class: 'btn btn-ghost', text: 'Cancel', onclick: closeSheet }),
+      save
+    ]
+  });
 }
 
 /* ============================================================
@@ -3443,7 +4646,8 @@ function openMenu() {
       item('Receipts',
         '<svg viewBox="0 0 24 24"><path d="M4 3h16v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M8 8h8M8 12h5"/></svg>',
         { on: true, tint: true,
-          onclick: () => { close(); showPlanning(false); showSite(false); showEmails(false); } }),
+          onclick: () => { close(); showPlanning(false); showSite(false); showEmails(false);
+                           showStatements(false); } }),
       item('Plans',
         '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>',
         { chev: true, id: 'mplans', onclick: () => { close(); openPlanning(); } })
@@ -3465,6 +4669,10 @@ function openMenu() {
         '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h3l2-2h4l2 2h3a2 2 0 012 2v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>' +
         '<circle cx="12" cy="12" r="3.4"/></svg>',
         { chev: true, id: 'msite', onclick: () => { close(); openSiteRecords(); } }),
+      item('Statements',
+        '<svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15a0 0 0 010 0H6a0 0 0 010 0z"/>' +
+        '<path d="M15 2v5h5"/><path d="M9 13h6M9 17h4"/></svg>',
+        { chev: true, id: 'mstmt', onclick: () => { close(); openStatements(); } }),
       item('Emails',
         '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/>' +
         '<path d="M3 7l9 6 9-6"/></svg>',
@@ -3529,7 +4737,26 @@ function openSettings() {
 /* ============================================================
    SHEETS
    ============================================================ */
-function closeSheet() { $('#sheets').innerHTML = ''; }
+/* Sheets arrive by sliding up, so they leave the same way rather than vanishing.
+   The node is taken out of the flow immediately so nothing can be tapped while
+   it plays, and removed for real when it is done — or at once if the person has
+   asked for less motion. */
+const CLOSE_MS = 180;
+function closeSheet() {
+  const host = $('#sheets');
+  // the one on top, not the one underneath: a receipt opened from a day view
+  // sits above it, and closing must take the receipt away, not the day
+  const scrim = host.lastElementChild;
+  if (!scrim || reducedMotion()) { if (scrim) scrim.remove(); return; }
+  scrim.classList.add('closing');
+  scrim.style.pointerEvents = 'none';
+  setTimeout(() => scrim.remove(), CLOSE_MS);
+}
+
+const reducedMotion = () => {
+  try { return matchMedia('(prefers-reduced-motion: reduce)').matches; }
+  catch { return false; }
+};
 
 function sheet({ title, sub, body, foot, onClose }) {
   const bail = () => { if (onClose) onClose(); closeSheet(); };
@@ -3586,9 +4813,15 @@ function openDay(dateStr) {
   const list = byDay().get(dateStr) || [];
   const total = list.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
+  // Editing one of these changes the day itself — a different total, or one
+  // receipt fewer if its date moved — so when the editor closes the day is put
+  // back up as it now stands, rather than as it was.
+  const again = () => openDay(dateStr);
+
   const body = list.length
-    ? [el('div', { class: 'rlist' }, list.map(receiptRow))]
-    : [el('p', { class: 'empty', text: 'Nothing filed on this day yet.' })];
+    ? [el('div', { class: 'rlist', id: 'dayblock' },
+        list.map(r => receiptRow(r, false, again)))]
+    : [el('p', { class: 'empty', id: 'dayblock', text: 'Nothing filed on this day yet.' })];
 
   sheet({
     title: prettyDate(dateStr),
@@ -3602,7 +4835,7 @@ function openDay(dateStr) {
   signThumbs();
 }
 
-function receiptRow(r, showDate) {
+function receiptRow(r, showDate, onSaved) {
   const isPdf = r.file_type === 'application/pdf';
   const thumb = r.image_cleared
     ? el('div', { class: 'thumb gone', text: 'CLEARED' })
@@ -3614,7 +4847,9 @@ function receiptRow(r, showDate) {
   const meta = showDate
     ? prettyDate(r.receipt_date)
     : (r.uploader_name || '');
-  return el('button', { class: 'rrow', onclick: () => openReceipt(r) }, [
+  // the same editor as everywhere else — the picture is still one tap away
+  // inside it, so nothing has been taken off the read-only view
+  return el('button', { class: 'rrow', onclick: () => openReceiptEdit(r, onSaved) }, [
     thumb,
     el('div', { class: 'rmeta' }, [
       el('b',    { text: r.description || 'Receipt' }),
@@ -3746,6 +4981,16 @@ function bindZoomGestures(host, img, area) {
   });
 
   overlay.querySelector('.vreset')?.addEventListener('click', reset);
+
+  // the same engine, driven by a button rather than two fingers — a phone pinches,
+  // everything else taps + and −
+  const zoomBy = k => {
+    z = Math.min(MAXZ, Math.max(1, z * k));
+    if (z <= 1.01) { z = 1; tx = ty = 0; }
+    overlay.classList.toggle('zoomed', z > 1.01);
+    clamp(); schedule();
+  };
+  return { zoomBy, reset, zoom: () => z };
 }
 
 async function removeReceipt(r, viewer) {
@@ -4091,11 +5336,25 @@ function findDate(text) {
    stripped before any number is read off a line. */
 const dropRates = s => s.replace(/\d+(?:[.,]\d+)?\s*%/g, ' ');
 
+/* "£1,245.60" is twelve hundred and forty-five pounds, not five pounds sixty.
+   Printed invoices group their thousands; till rolls usually do not. Both are
+   read here, and a figure that runs on into more digits is not a figure at all. */
+function moneyValue(raw) {
+  const s = String(raw);
+  const i = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
+  if (i < 0) return null;
+  const whole = s.slice(0, i).replace(/\D/g, '');
+  const frac  = s.slice(i + 1).replace(/\D/g, '');
+  const v = parseFloat((whole || '0') + '.' + frac);
+  return isFinite(v) ? v : null;
+}
+
 function lastMoneyOn(line) {
-  const hits = [...dropRates(line).matchAll(/(\d{1,5}[.,]\d{2})/g)];
+  const hits = [...dropRates(line).matchAll(
+    /(\d{1,3}(?:[ ,.]\d{3})+[.,]\d{2}|\d{1,5}[.,]\d{2})(?!\d)/g)];
   if (!hits.length) return null;
-  const v = parseFloat(hits[hits.length - 1][1].replace(',', '.'));
-  return isFinite(v) && v >= 0 && v < 100000 ? v : null;
+  const v = moneyValue(hits[hits.length - 1][1]);
+  return v !== null && v >= 0 && v < 1000000 ? v : null;
 }
 
 function findTotal(text) {
@@ -4199,6 +5458,68 @@ async function getWorker() {
 /* Runs behind the details sheet rather than in front of it, so nothing is ever
    waiting on the reader. `token` stops a slow result landing in a later sheet. */
 let readToken = 0;
+/* A PDF invoice already contains its own text, so there is nothing to OCR: the
+   words come straight out of the document. Only two things are looked for — the
+   total, so a duplicate can be spotted, and the invoice number. The VAT rate is
+   never read off the document; it stays the form's 20% default, which is yours
+   to change. */
+const PDF_TEXT_PAGES = 5;
+
+/* The lines matter: "Total" and "VAT" on one line means something different from
+   "Total" on its own. pdf.js marks line ends itself; where it does not, the
+   baseline height of each fragment puts the lines back together. */
+function pdfLines(items) {
+  const list = items || [];
+  if (list.some(it => it.hasEOL))
+    return list.map(it => (it.str || '') + (it.hasEOL ? '\n' : ' ')).join('');
+
+  const rows = new Map();
+  list.forEach(it => {
+    const y = Math.round((((it.transform || [])[5]) || 0) * 2) / 2;
+    if (!rows.has(y)) rows.set(y, []);
+    rows.get(y).push(it.str || '');
+  });
+  return [...rows.entries()].sort((a, b) => b[0] - a[0])
+                            .map(([, v]) => v.join(' ')).join('\n');
+}
+
+async function readPdfText(bytes) {
+  const lib = await loadPdfJs();
+  const pdf = await lib.getDocument({ data: bytes.slice(0) }).promise;
+  const pages = Math.min(PDF_TEXT_PAGES, pdf.numPages || 1);
+  let out = '';
+  for (let i = 1; i <= pages; i++) {
+    const tc = await (await pdf.getPage(i)).getTextContent();
+    out += pdfLines(tc && tc.items) + '\n';
+  }
+  return out;
+}
+
+async function readPdf(target, token) {
+  let timer;
+  const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('slow')), 30000); });
+  try {
+    const bytes = new Uint8Array(await Promise.race([target.photo.arrayBuffer(), timeout]));
+    const txt = await Promise.race([readPdfText(bytes), timeout]);
+    if (token !== readToken) return;
+    const tot = findTotal(txt);
+    target.read = {
+      ok: true,
+      date: null,                      // the date comes from the email or the form
+      total: tot ? tot.amount : null,
+      raw: { total: tot && tot.raw },
+      invoiceNo: findInvoiceNo(txt),
+      currency: findCurrency(txt)
+    };
+  } catch (e) {
+    if (token !== readToken) return;
+    target.read = { ok: false, why: /slow/.test(String(e && e.message)) ? 'slow' : 'unavailable' };
+  } finally {
+    clearTimeout(timer);
+  }
+  if (token === readToken) applyRead(target);
+}
+
 async function readReceipt(target, token) {
   let timer;
   const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('slow')), 60000); });
@@ -4494,14 +5815,16 @@ async function handlePicked(file) {
 
 /* Editing a receipt that is already filed. Same fields, same VAT arithmetic,
    same folder picker as adding one — only the picture and the save differ. */
-async function openReceiptEdit(r) {
+async function openReceiptEdit(r, onSaved) {
   await loadFolders();
 
   const F = receiptFieldSet({
     description: r.description || '',
     date: String(r.receipt_date),
     amount: r.amount, vat: r.vat, net: r.net, rate: r.vat_rate,
-    folderId: r.folder_id
+    folderId: r.folder_id,
+    // a receipt is never a duplicate of itself
+    excludeId: r.id, invoiceNo: r.invoice_no || null
   });
 
   // the picture, tappable to open it full screen where it zooms and pans
@@ -4544,6 +5867,10 @@ async function openReceiptEdit(r) {
       vatRate = Math.round(vatRate * 100) / 100;
     }
 
+    // changing a total onto one that already exists gets the same warning as a
+    // new receipt does — and the same free choice
+    if (!await duplicateWarning(amt, r.invoice_no || null, F.date.value, r.id)) return;
+
     save.disabled = true;
     busy(true, 'Saving changes…');
     try {
@@ -4556,9 +5883,16 @@ async function openReceiptEdit(r) {
         folder_id: F.folder() || null
       }).eq('id', r.id);
       if (res.error) throw res.error;
+
+      // moved to another month? then that is the month to be looking at
+      const moved = new Date(F.date.value + 'T12:00:00');
+      if (moved.getMonth() !== view.getMonth() ||
+          moved.getFullYear() !== view.getFullYear()) view = moved;
+
       await loadMonth();
       busy(false); save.disabled = false;
       closeSheet();
+      if (onSaved) onSaved();          // whatever list this came from, repainted
       toast('Receipt updated');
     } catch (e) {
       busy(false); save.disabled = false;
@@ -4600,6 +5934,9 @@ function receiptFieldSet(initial) {
   const date   = el('input', { type:'date', id:'f_date',
                     value: init.date || ymd(new Date()) });
   const sums   = el('p', { class:'sumline' });
+  // shown under the figures the moment a total matches one already on file, and
+  // gone again as soon as it does not
+  const dupbox = el('div', { class:'dupbox hide', id:'f_dup' });
 
   let folderId = init.folderId || null;
   const folderBtn = el('button', { class: 'pickfolder', id: 'f_folderpick' });
@@ -4636,6 +5973,22 @@ function receiptFieldSet(initial) {
   const hold  = (k, list) => { if (!held.includes(k)) held.push(k); list.push(k); };
   const release = k => { const i = held.indexOf(k); if (i > -1) held.splice(i, 1); };
 
+  let dupInvoice = init.invoiceNo || null;
+  let dupTimer = 0, dupSeq = 0, dupArmed = false;
+  const runDupCheck = async () => {
+    const seq = ++dupSeq;
+    const amt = amount.value.trim() ? parseMoney(amount.value) : null;
+    let m = null;
+    try { m = await duplicateMatch(amt, dupInvoice, init.excludeId || null); } catch { m = null; }
+    if (seq !== dupSeq) return;              // a later keystroke has overtaken this one
+    paintDupBox(dupbox, m);
+  };
+  const checkDup = () => {
+    dupArmed = true;
+    clearTimeout(dupTimer);
+    dupTimer = setTimeout(runDupCheck, 250);
+  };
+
   const recalc = src => {
     if (src) hold(src, touched);
     // Correcting the total or the rate is a request to work the VAT out again.
@@ -4668,6 +6021,9 @@ function receiptFieldSet(initial) {
     const warn = reconcileWarning(v);
     sums.textContent = warn || '';
     sums.className = 'sumline' + (warn ? ' bad' : '');
+    // a figure the user has touched — or one a document handed over — is worth
+    // checking; simply opening a receipt that is already filed is not
+    if (src || dupArmed) checkDup();
   };
   net.oninput    = () => recalc('net');
   vat.oninput    = () => recalc('vat');
@@ -4686,7 +6042,10 @@ function receiptFieldSet(initial) {
   if (init.rate !== null && init.rate !== undefined) hold('rate', seeded);
   recalc(null);
 
-  return { desc, amount, vat, net, rate, date, sums, folderBtn, recalc,
+  return { desc, amount, vat, net, rate, date, sums, folderBtn, recalc, dupbox,
+           checkDup,
+           setInvoice: no => { dupInvoice = no || null; checkDup(); },
+           invoiceNo: () => dupInvoice,
            userTyped: k => held.includes(k),
            hold: keys => { (keys || []).forEach(k => hold(k, touched)); recalc(null); },
            folder: () => folderId,
@@ -4701,6 +6060,7 @@ function receiptFieldSet(initial) {
                el('div', {}, [el('label', { for:'f_net', text:'Net ' + CURRENCY }), net])
              ]),
              sums,
+             dupbox,
              el('div', {}, [el('label', { for:'f_date', text:'Date' }), date]),
              el('div', {}, [el('label', { text:'Folder' }), folderBtn])
            ] };
@@ -4776,9 +6136,14 @@ function openDetails() {
 
   // hand the reader its fields, then let it work while the sheet is already up
   pending.fields = { date, amount, vat, net, rate, readbox,
-    userTyped: F.userTyped, afterRead: F.hold };
+    userTyped: F.userTyped, afterRead: F.hold,
+    setInvoice: F.setInvoice, checkDup: F.checkDup };
   if (isPdf) {
-    renderRead(readbox, null);                    // nothing to OCR in a PDF
+    // the words are already in the document — read the total and invoice number
+    // straight out of it, and never the VAT rate
+    renderRead(readbox, 'reading');
+    readToken++;
+    readPdf(pending, readToken);
   } else {
     renderRead(readbox, 'reading');
     readToken++;
@@ -4824,7 +6189,7 @@ function renderRead(box, state, found) {
   if (found.total !== null) line('Total', money(found.total), 'printed');
   if (found.invoiceNo) line('Invoice no', found.invoiceNo);
   bits.push(el('span', { class: 'unknown',
-    text: 'VAT is worked out from the rate below, not read off the picture. '
+    text: 'VAT is worked out from the rate below, never read off the receipt. '
         + 'Change the rate if this one is not at ' + DEFAULT_VAT_RATE + '%.' }));
 
   box.appendChild(el('div', { class: 'rmark', html: WARN_ICON }));
@@ -4860,6 +6225,10 @@ function applyRead(target) {
     invoice_no: r.invoiceNo || null,
     currency: r.currency || null
   };
+  // an invoice number read off the document is worth checking against the ones
+  // already filed, the same as the total is
+  if (f.setInvoice) f.setInvoice(r.invoiceNo || null);
+  else if (f.checkDup) f.checkDup();
 
   renderRead(f.readbox, 'done', {
     date: r.date && r.date.date, dateRaw: r.date && r.date.raw,
@@ -4925,10 +6294,11 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
     vatRate = Math.round(vatRate * 100) / 100;
   }
 
-  // An import gets one look for something already on file first. This happens
-  // before the overlay goes up, so the question is answerable.
-  if (emailImport && !await duplicateWarning(amt, (pending.meta && pending.meta.invoice_no) || null,
-                                             dateStr)) return;
+  // One last look for something already on file — typed in by hand or brought in
+  // from an email, it gets the same check. This happens before the overlay goes
+  // up, so the question is answerable.
+  if (!await duplicateWarning(amt, (pending.meta && pending.meta.invoice_no) || null,
+                              dateStr)) return;
 
   if (saving) return;                 // a second tap cannot start a second save
   saving = true;
@@ -4943,7 +6313,10 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
       .upload(path, chosenBlob, { contentType: pending.type, upsert: false });
     if (up.error) throw up.error;
 
-    const { error } = await db.from('receipts').insert({
+    // A receipt is a receipt. These are the fields every one of them has,
+    // whether it was photographed at the merchant's counter or came off an
+    // email — nothing here knows or cares that Gmail exists.
+    const row = {
       receipt_date: dateStr,
       description,
       amount: amt,
@@ -4951,8 +6324,6 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
       net: netAmt,
       vat_rate: vatRate,
       invoice_no: (pending.meta && pending.meta.invoice_no) || null,
-      gmail_message_id: emailImport ? emailImport.messageId : null,
-      gmail_attachment_id: emailImport ? emailImport.attachmentId : null,
       currency: (pending.meta && pending.meta.currency) || 'GBP',
       folder_id: pending.folderId || null,
       file_path: path,
@@ -4960,7 +6331,28 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
       file_size: chosenBlob.size,
       uploaded_by: session.user.id,
       uploader_name: session.user.email
-    });
+    };
+    // and only a receipt that actually came from an email carries a note of
+    // where it came from
+    if (emailImport) {
+      row.gmail_message_id = emailImport.messageId;
+      row.gmail_attachment_id = emailImport.attachmentId;
+    }
+
+    let { error } = await db.from('receipts').insert(row);
+
+    // The Gmail columns are an optional extra on the table. If this database
+    // has not had them added yet, the receipt itself is still perfectly good:
+    // file it without the note of where it came from, and say so plainly rather
+    // than losing the receipt or pretending it was recorded.
+    let gmailRefLost = false;
+    if (error && emailImport && missingGmailColumn(error)) {
+      delete row.gmail_message_id;
+      delete row.gmail_attachment_id;
+      gmailRefLost = true;
+      ({ error } = await db.from('receipts').insert(row));
+    }
+
     if (error) {
       await db.storage.from(BUCKET).remove([path]);   // don't leave an orphan file
       throw error;
@@ -4977,7 +6369,10 @@ async function saveReceipt({ desc, amount, vat, net, rate, date, save }) {
     } else {
       discardPending();
       await loadMonth();
-      toast('Saved to ' + prettyDate(dateStr));
+      toast(gmailRefLost
+        ? 'Saved — but the link back to the email was not recorded: this database '
+          + 'has not had its Gmail columns added yet'
+        : 'Saved to ' + prettyDate(dateStr), gmailRefLost);
     }
   } catch (e) {
     toast(niceError(e), true);
@@ -5077,6 +6472,7 @@ async function openMonthExport() {
     if (res.error) throw res.error;
     all = res.data || [];
   } catch (e) { busy(false); toast(niceError(e), true); return; }
+  await loadStatements().catch(() => {});   // optional extra; never blocks the export
   busy(false);
 
   if (!all.length) { toast('Nothing filed yet'); return; }
@@ -5085,7 +6481,7 @@ async function openMonthExport() {
   const picked = new Set();
   const inMonth = k => all.filter(r => String(r.receipt_date).slice(0, 7) === k);
 
-  let summary, body, foot;
+  let summary, body, foot, picker;
 
   const paint = () => {
     const chosen = sanitiseRows(months.filter(k => picked.has(k)).flatMap(inMonth));
@@ -5116,18 +6512,23 @@ async function openMonthExport() {
     })));
 
     foot.innerHTML = '';
+    const nStmt = picker ? picker.count() : 0;
     const go = el('button', { class: 'btn btn-primary btn-full',
-      text: picked.size ? `Download PDF · ${picked.size} month${picked.size === 1 ? '' : 's'}`
-                        : 'Select a month' });
+      text: picked.size
+        ? `Download PDF · ${picked.size} month${picked.size === 1 ? '' : 's'}`
+          + (nStmt ? ` + ${nStmt} statement${nStmt === 1 ? '' : 's'}` : '')
+        : 'Select a month' });
     go.disabled = !picked.size;
     go.onclick = () => {
       const keys = months.filter(k => picked.has(k));      // oldest last, sorted below
+      const stmts = picker ? picker.picked() : [];
       closeSheet();
       buildReport({
         rows: chosen,
         title: 'Receipt report',
         scope: describeMonths(keys),
         monthKeys: keys,
+        statements: stmts,
         filename: keys.length === 1
           ? `Receipts ${monthLabelOf(keys[0])}.pdf`
           : 'Receipt report.pdf'
@@ -5139,11 +6540,12 @@ async function openMonthExport() {
   summary = el('div', { class: 'card selsum' });
   body = el('div', { class: 'selbody' });
   foot = el('div', { class: 'sfoot' });
+  picker = statementPicker(() => paint());
 
   const card = sheet({
     title: 'Select Months',
     sub: 'One PDF, however many you tick',
-    body: [ summary, body ]
+    body: [ summary, body, picker.host ]
   });
   card.appendChild(foot);
   paint();
@@ -5159,6 +6561,7 @@ async function openReportBuilder() {
     if (res.error) throw res.error;
     all = res.data || [];
   } catch (e) { busy(false); toast(niceError(e), true); return; }
+  await loadStatements().catch(() => {});   // optional extra; never blocks the export
   busy(false);
 
   if (!all.length) { toast('Nothing filed yet'); return; }
@@ -5175,7 +6578,7 @@ async function openReportBuilder() {
       pickedReceipts.has(r.id));
   };
 
-  let summary, foot, body;
+  let summary, foot, body, picker;
 
   const paint = () => {
     const chosen = sanitiseRows(resolve());
@@ -5188,8 +6591,11 @@ async function openReportBuilder() {
       el('div', {}, [el('span', { text: 'Total' }),    el('b', { class: 'accent', text: money(s.total) })])
     ]));
     foot.innerHTML = '';
+    const nStmt = picker ? picker.count() : 0;
     const go = el('button', { class: 'btn btn-primary btn-full',
-      text: s.n ? `Create PDF · ${s.n} receipt${s.n === 1 ? '' : 's'}` : 'Nothing selected' });
+      text: s.n ? `Create PDF · ${s.n} receipt${s.n === 1 ? '' : 's'}`
+                  + (nStmt ? ` + ${nStmt} statement${nStmt === 1 ? '' : 's'}` : '')
+                : 'Nothing selected' });
     go.disabled = !s.n;
     go.onclick = () => {
       const mKeys = [...pickedMonths];
@@ -5197,6 +6603,7 @@ async function openReportBuilder() {
       const parts = [];
       if (mKeys.length) parts.push(describeMonths(mKeys));
       if (!mKeys.length && !fNames.length) parts.push('Selected receipts');
+      const stmts = picker ? picker.picked() : [];
       closeSheet();
       buildReport({
         rows: chosen,
@@ -5204,6 +6611,7 @@ async function openReportBuilder() {
         scope: parts.join('  ·  '),
         monthKeys: mKeys,          // every month ticked, even one that turns out empty
         folderScope: fNames.join(', ') || null,
+        statements: stmts,
         filename: 'Receipt report.pdf'
       });
     };
@@ -5264,17 +6672,93 @@ async function openReportBuilder() {
   summary = el('div', { class: 'card selsum' });
   body = el('div', { class: 'selbody' });
   foot = el('div', { class: 'sfoot' });
+  picker = statementPicker(() => paint());
 
   const card = sheet({
     title: 'Create report',
     sub: 'Combine any of these',
-    body: [ summary, body ]
+    body: [ summary, body, picker.host ]
   });
   card.appendChild(foot);
   rebuild();
 }
 
-async function buildReport({ rows: list, title, scope, monthKeys, folderScope, filename }) {
+/* ---------- Include Statements ----------
+   Off unless asked for, and nothing is ticked by default: a receipt report is a
+   receipt report until you say otherwise. Returns the element to drop into the
+   export sheet, and a getter for whatever ended up ticked. */
+function statementPicker(onChange) {
+  const chosen = new Set();
+  let on = false;
+  const host = el('div', { class: 'stsel', id: 'stsel' });
+
+  const toggle = el('button', { class: 'selrow', id: 'incstmts' });
+
+  const paint = () => {
+    toggle.innerHTML = '';
+    toggle.className = 'selrow' + (on ? ' on' : '');
+    toggle.appendChild(el('span', { class: 'pick' + (on ? ' on' : ''), id: 'incpick' }));
+    toggle.appendChild(el('div', { class: 'selmeta' }, [
+      el('b', { text: 'Include Statements' }),
+      el('span', { id: 'inccount', text: !stmtTable && stmtTable !== null
+        ? 'Statements is not set up yet'
+        : on ? (chosen.size ? chosen.size + ' selected' : 'None selected yet')
+             : (statements.length ? statements.length + ' available' : 'None added yet') })
+    ]));
+
+    host.innerHTML = '';
+    host.appendChild(el('div', { class: 'card' }, [toggle]));
+
+    if (!on) { if (onChange) onChange(); return; }
+
+    if (!statements.length) {
+      host.appendChild(el('p', { class: 'hintline', id: 'incnone',
+        text: stmtTable === false ? STMT_SQL_HINT
+          : 'No statements have been added yet. Add one in Statements first.' }));
+      if (onChange) onChange();
+      return;
+    }
+
+    const bar = el('div', { class: 'bar2' }, [
+      el('span', { text: chosen.size + ' of ' + statements.length + ' selected' }),
+      el('button', { id: 'incall',
+        text: chosen.size === statements.length ? 'Clear all' : 'Select all',
+        onclick: () => {
+          if (chosen.size === statements.length) chosen.clear();
+          else statements.forEach(x => chosen.add(x.id));
+          paint();
+        } })
+    ]);
+    host.appendChild(bar);
+
+    host.appendChild(el('div', { class: 'card' }, statements.map(st => {
+      const ticked = chosen.has(st.id);
+      return el('button', { class: 'incrow selrow' + (ticked ? ' on' : ''),
+        onclick: () => { ticked ? chosen.delete(st.id) : chosen.add(st.id); paint(); } }, [
+        el('span', { class: 'pick' + (ticked ? ' on' : '') }),
+        el('div', { class: 'meta' }, [
+          el('b', { text: st.title }),
+          el('span', { text: stmtPeriod(st) + '  ·  ' + (stmtIsPdf(st) ? 'PDF' : 'Image') })
+        ])
+      ]);
+    })));
+
+    if (onChange) onChange();
+  };
+
+  toggle.onclick = () => { on = !on; if (!on) chosen.clear(); paint(); };
+  paint();
+
+  return {
+    host,
+    // only ever what was actually ticked, in the order they are listed
+    picked: () => on ? statements.filter(x => chosen.has(x.id)) : [],
+    count: () => (on ? chosen.size : 0)
+  };
+}
+
+async function buildReport({ rows: list, title, scope, monthKeys, folderScope,
+                             statements: stmts, filename }) {
   const picked = sanitiseRows(list || []);
   if (!picked.length) { toast('Nothing to export in that selection'); return; }
 
@@ -5508,7 +6992,69 @@ async function buildReport({ rows: list, title, scope, monthKeys, folderScope, f
       }
     }
 
-    if (skipped.length) {
+    /* ---------------- the statements, if any were asked for ----------------
+       Appended after the receipts and clearly fenced off by their own title
+       page: they are documents kept alongside the receipts, never part of the
+       figures above. Nothing above this point changes whether they are here or
+       not — with none selected this whole block is skipped and the PDF is
+       exactly the one the app has always produced. */
+    const wanted = stmts || [];
+    const badStatements = [];
+    if (wanted.length) {
+      const divider = doc.addPage([W, H]);
+      divider.drawText(winAnsi('STATEMENTS'),
+        { x: M, y: H / 2 + 10, size: 28, font: bold, color: ink });
+      divider.drawText(winAnsi(
+        wanted.length + ' document' + (wanted.length === 1 ? '' : 's')
+        + ' attached to this report'),
+        { x: M, y: H / 2 - 14, size: 11, font, color: dim });
+      divider.drawText(winAnsi('Kept separately from the receipts and not included in any total above.'),
+        { x: M, y: H / 2 - 32, size: 9, font, color: dim });
+
+      for (let i = 0; i < wanted.length; i++) {
+        const st = wanted[i];
+        busy(true, `Adding statement ${i + 1} of ${wanted.length}…`,
+             (i + 1) / wanted.length);
+        try {
+          const { data: sg, error: sgErr } =
+            await db.storage.from(BUCKET).createSignedUrl(st.file_path, 3600);
+          if (sgErr) throw sgErr;
+          const su = sg && sg.signedUrl;
+          if (!su) throw new Error('missing');
+          const res = await fetch(su);
+          if (!res.ok) throw new Error('unreadable');
+          const sBytes = new Uint8Array(await res.arrayBuffer());
+          if (!sBytes.length) throw new Error('empty');
+
+          const looksPdf = sBytes[0] === 0x25 && sBytes[1] === 0x50;   // %P
+          if (looksPdf) {
+            const src = await PDFDocument.load(sBytes, { ignoreEncryption: true });
+            const copied = await doc.copyPages(src, src.getPageIndices());
+            copied.forEach(pg => doc.addPage(pg));
+            continue;
+          }
+
+          const isPng = sBytes[0] === 0x89 && sBytes[1] === 0x50;
+          const img = isPng ? await doc.embedPng(sBytes) : await doc.embedJpg(sBytes);
+          const pg = doc.addPage([W, H]);
+          pg.drawText(winAnsi(stmtPeriod(st)),
+            { x: M, y: H - M - 11, size: 9, font, color: dim });
+          const tl = wrap(st.title || 'Statement', bold, 14, W - M * 2);
+          tl.slice(0, 2).forEach((ln, k) =>
+            pg.drawText(ln, { x: M, y: H - M - 30 - k * 17, size: 14, font: bold, color: ink }));
+          const boxTop = H - M - 30 - Math.min(tl.length, 2) * 17 - 12;
+          const boxH = boxTop - M, boxW = W - M * 2;
+          const kk = Math.min(boxW / img.width, boxH / img.height);
+          pg.drawImage(img, { x: M + (boxW - img.width * kk) / 2,
+                              y: M + (boxH - img.height * kk) / 2,
+                              width: img.width * kk, height: img.height * kk });
+        } catch {
+          badStatements.push(st);
+        }
+      }
+    }
+
+    if (skipped.length || badStatements.length) {
       const pg = doc.addPage([W, H]);
       pg.drawText(winAnsi('Could not be included'), { x: M, y: H - M - 18, size: 15, font: bold, color: ink });
       let yy = H - M - 44;
@@ -5517,6 +7063,16 @@ async function buildReport({ rows: list, title, scope, monthKeys, folderScope, f
           { x: M, y: yy, size: 10, font, color: dim });
         yy -= 15;
       });
+      if (badStatements.length) {
+        yy -= 10;
+        pg.drawText(winAnsi('Statements'), { x: M, y: yy, size: 11, font: bold, color: ink });
+        yy -= 17;
+        badStatements.forEach(st => {
+          pg.drawText(winAnsi(`${st.period_start}  —  ${st.title}`),
+            { x: M, y: yy, size: 10, font, color: dim });
+          yy -= 15;
+        });
+      }
     }
 
     busy(true, 'Finishing up…');
@@ -5534,7 +7090,10 @@ async function buildReport({ rows: list, title, scope, monthKeys, folderScope, f
     const a = el('a', { href: url, download: name });
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 15000);
-    toast('PDF downloaded');
+    toast(badStatements.length
+      ? `PDF downloaded — ${badStatements.length} statement${badStatements.length === 1 ? '' : 's'} `
+        + 'could not be added; see the last page'
+      : 'PDF downloaded', badStatements.length > 0);
   } catch (e) {
     busy(false);
     toast(niceError(e), true);

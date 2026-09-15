@@ -7,24 +7,37 @@
     projects: [],
     site_records: [],
     site_photos: [],
+    statements: [],
     missingTables: new Set(),   // name a table here to simulate "not created yet"
+    // name a column here to simulate a migration that was never run: any insert
+    // or select mentioning it fails the way PostgREST really fails
+    missingColumns: new Set(),
     session: null,
     listeners: [],
     files: new Map(),
+    missingFiles: new Set(),   // name a path here to simulate a file gone from storage
   };
   root.__mock = store;
 
   function emit(evt) { store.listeners.forEach(fn => fn(evt, store.session)); }
 
+  const urlFor = p => /\.pdf$/i.test(String(p)) ? '/tiny.pdf' : '/pixel.png';
+
   function builder(table) {
-    const q = { table, _filters: [], _op: null, _payload: null };
-    const named = ['folders', 'plans', 'projects', 'site_records', 'site_photos'];
+    const q = { table, _filters: [], _op: null, _payload: null,
+                _cols: [], _filterCols: [] };
+    const named = ['folders', 'plans', 'projects', 'site_records', 'site_photos',
+                   'statements'];
     const bag = () => (named.includes(table) ? store[table] : store.rows);
     const setBag = v => { if (named.includes(table)) store[table] = v; else store.rows = v; };
     q._bag = bag; q._setBag = setBag;
 
     // .select() after .insert() means "give the row back", not a new query
-    q.select = function () { if (!q._op) q._op = 'select'; return q; };
+    q.select = function (cols) {
+      if (cols && cols !== '*') q._cols = String(cols).split(',').map(c => c.trim());
+      if (!q._op) q._op = 'select';
+      return q;
+    };
     q.limit = function () { return q; };
     q.is = function (c, v) { q._filters.push(r => (r[c] ?? null) === v); return q; };
     q.insert = function (p) { q._op = 'insert'; q._payload = p; return q; };
@@ -33,11 +46,22 @@
     q.order  = function () { return q; };
     q.gte = function (c, v) { q._filters.push(r => r[c] >= v); return q; };
     q.lte = function (c, v) { q._filters.push(r => r[c] <= v); return q; };
-    q.eq  = function (c, v) { q._filters.push(r => (r[c] ?? false) === v); return q; };
+    q.eq  = function (c, v) { q._filterCols.push(c); q._filters.push(r => (r[c] ?? false) === v); return q; };
     q.in  = function (c, vs) { q._filters.push(r => vs.includes(r[c])); return q; };
 
     q.then = function (resolve) {
       let result;
+      const absent = [...store.missingColumns].find(c =>
+        (q._op === 'insert' && q._payload && Object.prototype.hasOwnProperty.call(q._payload, c)) ||
+        (q._op === 'update' && q._payload && Object.prototype.hasOwnProperty.call(q._payload, c)) ||
+        q._cols.includes(c) || q._filterCols.includes(c));
+      if (absent) {
+        return Promise.resolve({ data: null, error: {
+          code: 'PGRST204',
+          message: "Could not find the '" + absent + "' column of '" + q.table
+                 + "' in the schema cache"
+        } }).then(resolve);
+      }
       if (store.missingTables.has(q.table)) {
         return Promise.resolve({ data: null, error: {
           code: 'PGRST205',
@@ -77,6 +101,11 @@
           : q.table === 'site_photos'
           ? { id: 'sp-' + Math.random().toString(36).slice(2, 9),
               created_at: new Date().toISOString(), sort: 0 }
+          : q.table === 'statements'
+          ? { id: 'st-' + Math.random().toString(36).slice(2, 9),
+              created_at: new Date().toISOString(),
+              period_end: null, category: null, project_id: null,
+              file_type: null, file_size: null, created_by_name: null }
           : { id: 'id-' + Math.random().toString(36).slice(2, 9),
               created_at: new Date().toISOString(), vendor: null, amount: null,
               vat: null, net: null, vat_rate: null, folder_id: null, currency: 'GBP' };
@@ -136,11 +165,14 @@
                 store.files.set(path, { size: blob.size, type: opts?.contentType });
                 return { data: { path }, error: null };
               },
+              // a .pdf path gets a pdf back, so the merge branch is exercised
               async createSignedUrls(paths) {
-                return { data: paths.map(p => ({ path: p, signedUrl: '/pixel.png' })), error: null };
+                return { data: paths.map(p => ({ path: p, signedUrl: urlFor(p) })), error: null };
               },
               async createSignedUrl(p) {
-                return { data: { signedUrl: '/pixel.png' }, error: null };
+                if (store.missingFiles.has(p))
+                  return { data: null, error: { message: 'Object not found' } };
+                return { data: { signedUrl: urlFor(p) }, error: null };
               },
               async remove(paths) { paths.forEach(p => store.files.delete(p)); return { error: null }; },
             };
