@@ -166,12 +166,22 @@ main{flex:1;padding:16px 12px 0}
   border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);
   transform:rotate(-45deg)}
 .rechead:active h3,.rechead:active .chev{opacity:.55}
-.rechrow{display:flex;align-items:center;gap:8px}
-.rechrow .rechead{flex:1;min-width:0}
-.recsort{display:flex;align-items:center;gap:5px;flex:none;padding:0 16px 8px;
+.rechrow{display:flex;align-items:center;gap:8px;padding:0 16px 10px}
+.recsort{display:flex;align-items:center;gap:5px;flex:none;
   font-size:12px;font-weight:600;letter-spacing:.03em;color:var(--accent);
   transition:opacity .13s ease}
 .recsort:active{opacity:.55}
+.srch{flex:1;min-width:0;display:flex;align-items:center;gap:8px;
+  background:var(--surface-2);border-radius:10px;padding:0 10px;height:38px;
+  color:var(--faint)}
+.srch input{flex:1;min-width:0;background:none;border:0;padding:0;height:36px;
+  font-size:15px;color:var(--text)}
+.srch input::placeholder{color:var(--faint)}
+.srch input:focus{box-shadow:none;outline:none}
+.srch button{flex:none;width:22px;height:22px;border-radius:11px;display:grid;
+  place-items:center;background:var(--surface-3);color:var(--text)}
+.srch button:active{opacity:.6}
+.srchnote{padding:0 16px 8px;font-size:12px;color:var(--muted)}
 
 /* ---------- bottom bar ---------- */
 .bar{position:sticky;bottom:0;z-index:20;display:flex;gap:10px;
@@ -946,11 +956,22 @@ main{flex:1;padding:16px 12px 0}
     </div>
     <div class="grid" id="grid"></div>
     <section id="recent">
+      <button id="recenthead" class="rechead">
+        <h3>Recently Added</h3>
+        <span class="chev"></span>
+      </button>
       <div class="rechrow">
-        <button id="recenthead" class="rechead">
-          <h3>Recently Added</h3>
-          <span class="chev"></span>
-        </button>
+        <div class="srch">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+          <input id="recentsearch" type="text" inputmode="search" autocomplete="off"
+                 placeholder="Search receipts…" aria-label="Search receipts">
+          <button id="recentclear" class="hide" aria-label="Clear search">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
         <button id="recentsort" class="recsort" aria-label="Sort receipts">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1450,10 +1471,14 @@ function renderTotals() {
    is refetched: this only decides the order they are drawn in. The choice is
    remembered between visits. */
 const SORTS = {
-  new:  { label: 'Newest',  group: 'Date',   what: 'Newest first' },
-  old:  { label: 'Oldest',  group: 'Date',   what: 'Oldest first' },
-  high: { label: 'Highest', group: 'Amount', what: 'Highest first' },
-  low:  { label: 'Lowest',  group: 'Amount', what: 'Lowest first' }
+  // the date on the receipt is the one that means something: it is the date
+  // typed on the form, and a bulk upload does not disturb it
+  new:    { label: 'Newest',       what: 'Newest first',  by: 'receipt' },
+  old:    { label: 'Oldest',       what: 'Oldest first',  by: 'receipt' },
+  addnew: { label: 'Newest added', what: 'Newest added',  by: 'added' },
+  addold: { label: 'Oldest added', what: 'Oldest added',  by: 'added' },
+  high:   { label: 'Highest',      what: 'Highest first', by: 'amount' },
+  low:    { label: 'Lowest',       what: 'Lowest first',  by: 'amount' }
 };
 
 let recentSort = (() => {
@@ -1462,23 +1487,34 @@ let recentSort = (() => {
 })();
 
 /* A receipt with no total sorts to the end whichever way amount is pointing —
-   an unknown figure is not a small one. Ties fall back to when it was added, so
-   the same list always comes out in the same order. */
+   an unknown figure is not a small one. Two receipts on the same day fall back
+   to when they were added, and then to their id, so the same list always comes
+   out in the same order. */
 function sortReceipts(list, how) {
-  const added = r => String(r.created_at || '');
+  const on = r => String(r.receipt_date || '');          // the date on the receipt
+  const added = r => String(r.created_at || '');         // when it was put in the app
+  const id = r => String(r.id || '');
   const amt = r => (r.amount === null || r.amount === undefined) ? null : Number(r.amount);
+  const by = (SORTS[how] || SORTS.new).by;
   const out = [...list];
+
   out.sort((a, b) => {
-    if (how === 'old')  return added(a).localeCompare(added(b)) || String(a.id).localeCompare(String(b.id));
-    if (how === 'high' || how === 'low') {
+    if (by === 'amount') {
       const x = amt(a), y = amt(b);
-      if (x === null && y === null) return added(b).localeCompare(added(a));
+      if (x === null && y === null) return on(b).localeCompare(on(a)) || added(b).localeCompare(added(a));
       if (x === null) return 1;
       if (y === null) return -1;
       if (x !== y) return how === 'high' ? y - x : x - y;
-      return added(b).localeCompare(added(a));
+      return on(b).localeCompare(on(a)) || added(b).localeCompare(added(a)) || id(a).localeCompare(id(b));
     }
-    return added(b).localeCompare(added(a)) || String(b.id).localeCompare(String(a.id));
+    if (by === 'added') {
+      return how === 'addold'
+        ? added(a).localeCompare(added(b)) || id(a).localeCompare(id(b))
+        : added(b).localeCompare(added(a)) || id(b).localeCompare(id(a));
+    }
+    return how === 'old'
+      ? on(a).localeCompare(on(b)) || added(a).localeCompare(added(b)) || id(a).localeCompare(id(b))
+      : on(b).localeCompare(on(a)) || added(b).localeCompare(added(a)) || id(b).localeCompare(id(a));
   });
   return out;
 }
@@ -1500,9 +1536,15 @@ function openSortMenu() {
     title: 'Sort by',
     body: [
       el('div', { class: 'grp' }, [
-        el('h4', { text: 'Date' }),
+        el('h4', { text: 'Receipt Date' }),
         el('div', { class: 'card' }, [opt('new'), opt('old')]),
-        el('p', { class: 'hintline', text: 'By when the receipt was added.' })
+        el('p', { class: 'hintline',
+          text: 'The date on the receipt — the one you type on the receipt screen.' })
+      ]),
+      el('div', { class: 'grp' }, [
+        el('h4', { text: 'Date Added' }),
+        el('div', { class: 'card' }, [opt('addnew'), opt('addold')]),
+        el('p', { class: 'hintline', text: 'When it was put into the app.' })
       ]),
       el('div', { class: 'grp' }, [
         el('h4', { text: 'Amount' }),
@@ -1513,6 +1555,72 @@ function openSortMenu() {
   });
 }
 
+/* ---------- searching ----------
+   Everything worth typing about a receipt, flattened into one string per
+   receipt and matched against. Nothing is asked of the database per keystroke:
+   the receipts come from the list the duplicate check already keeps, fetched
+   once and reused, and the blob is built once per receipt and kept on it.
+
+   Several renderings of the same thing go into the blob on purpose, so "120",
+   "120.00" and "£120.00" all find the same receipt, and a date can be typed as
+   a month name, a year or the way it is printed on screen. */
+const SEARCH_CAP = 25;
+
+/* The blob is worth keeping, but only for as long as it is still true: edit a
+   total and it is rebuilt. The folder name is deliberately left out of it and
+   matched live, because folders may not have loaded when the blob was first
+   built, and a cached "Unfiled" would then never correct itself. */
+function searchBlob(r) {
+  const key = [r.description, r.receipt_date, r.amount, r.vat, r.net, r.vat_rate].join('|');
+  if (r.__blob && r.__blobKey === key) return r.__blob;
+  const bits = [r.description || ''];
+
+  const d = String(r.receipt_date || '');
+  if (d) {
+    bits.push(d);                                    // 2026-08-15
+    const t = new Date(d + 'T12:00:00');
+    if (!isNaN(t)) {
+      const month = MONTHS[t.getMonth()];
+      bits.push(prettyDate(d), month, month.slice(0, 3),
+                month + ' ' + t.getFullYear(), String(t.getFullYear()));
+    }
+  }
+
+  const num = (v, suffix) => {
+    if (v === null || v === undefined || !isFinite(Number(v))) return;
+    const n = Number(v);
+    bits.push(String(n), n.toFixed(2), CURRENCY + n.toFixed(2), CURRENCY + String(n));
+    if (suffix) bits.push(String(n) + suffix, n.toFixed(2) + suffix);
+  };
+  num(r.amount); num(r.vat); num(r.net);
+  num(r.vat_rate, '%');
+  if (r.vat_rate !== null && r.vat_rate !== undefined) bits.push('vat ' + r.vat_rate + '%');
+
+  r.__blobKey = key;
+  r.__blob = bits.join(' \u241f ').toLowerCase();
+  return r.__blob;
+}
+
+const searchText = r =>
+  searchBlob(r) + ' \u241f ' + (folderName(r.folder_id) || 'Unfiled').toLowerCase();
+
+/* Every word has to match something, so "screwfix 120" narrows rather than
+   widens. Currency symbols and thousands separators are dropped from the terms
+   because nobody types them the same way twice. */
+function searchReceipts(list, query) {
+  const terms = String(query || '').toLowerCase()
+    .split(CURRENCY).join(' ')
+    .split(/\s+/).map(t => t.replace(/,/g, '').trim()).filter(Boolean);
+  if (!terms.length) return list;
+  return list.filter(r => {
+    const blob = searchText(r);
+    return terms.every(t => blob.includes(t));
+  });
+}
+
+let recentQuery = '';
+let searchSeq = 0;
+
 function renderRecent() {
   const box = $('#recent'), list = $('#recentlist');
   // the header is the way into the full list, so this section is always here,
@@ -1522,11 +1630,51 @@ function renderRecent() {
   $('#recentsort').onclick = openSortMenu;
   $('#recentsortlbl').textContent = SORTS[recentSort].label;
 
+  const input = $('#recentsearch'), clear = $('#recentclear');
+  if (input.value !== recentQuery) input.value = recentQuery;
+  clear.classList.toggle('hide', !recentQuery);
+  input.oninput = () => { recentQuery = input.value; renderRecent(); };
+  clear.onclick = () => { recentQuery = ''; input.value = ''; renderRecent(); input.focus(); };
+
+  if (recentQuery.trim()) { runSearch(); return; }
+
   const latest = sortReceipts(rows, recentSort).slice(0, 4);
   list.innerHTML = '';
   if (latest.length) latest.forEach(r => list.appendChild(receiptRow(r, true, renderRecent)));
   else list.appendChild(el('p', { class: 'empty',
     text: 'Nothing added this month yet — tap to see everything.' }));
+}
+
+/* Searching looks past the month on screen — a receipt you are hunting for is
+   usually not in the month you happen to be standing in. */
+async function runSearch() {
+  const seq = ++searchSeq;
+  const q = recentQuery;
+  const list = $('#recentlist');
+
+  let all = dupRows;
+  if (!all || !folders.length) {
+    list.innerHTML = '';
+    list.appendChild(el('p', { class: 'empty', text: 'Searching…' }));
+    await loadFolders();                 // so a folder name is something to match on
+    all = await loadDupIndex();
+    if (seq !== searchSeq || q !== recentQuery) return;   // overtaken by later typing
+  }
+
+  const found = sortReceipts(searchReceipts(all, q), recentSort);
+  list.innerHTML = '';
+
+  if (!found.length) {
+    list.appendChild(el('p', { class: 'empty', text: 'No receipts found' }));
+    return;
+  }
+
+  found.slice(0, SEARCH_CAP).forEach(r =>
+    list.appendChild(receiptRow(r, true, renderRecent)));
+  if (found.length > SEARCH_CAP)
+    list.appendChild(el('p', { class: 'srchnote',
+      text: `Showing ${SEARCH_CAP} of ${found.length} matches — type a bit more to narrow it.` }));
+  signThumbs();
 }
 
 function renderGrid() {
@@ -2149,10 +2297,12 @@ async function openRecent() {
   try {
     // the order is asked for up front so the 60 that come back are the right 60,
     // then applied again below so the list reads the same whatever the server did
-    const byAmount = recentSort === 'high' || recentSort === 'low';
+    const by = (SORTS[recentSort] || SORTS.new).by;
+    const column = by === 'amount' ? 'amount' : by === 'added' ? 'created_at' : 'receipt_date';
     const res = await db.from('receipts').select('*')
-      .order(byAmount ? 'amount' : 'created_at',
-             { ascending: recentSort === 'old' || recentSort === 'low',
+      .order(column,
+             { ascending: recentSort === 'old' || recentSort === 'low' ||
+                          recentSort === 'addold',
                nullsFirst: false })
       .limit(60);
     if (res.error) throw res.error;
