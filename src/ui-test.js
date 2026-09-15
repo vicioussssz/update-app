@@ -1113,17 +1113,22 @@ async function signIn(page) {
     await page.waitForTimeout(1200);
     check('recently added opens', (await page.textContent('.shead h3')) === 'Recently added',
       await page.textContent('.shead h3').catch(() => 'none'));
-    const first = await page.textContent('.rcrow:first-child');
+    const timberRow = await page.textContent('.rcrow:has-text("Timber")');
     check('it shows what the receipt is for, the date and the folder',
-      /Timber/.test(first) && /Unfiled/.test(first), JSON.stringify(first));
+      /Timber/.test(timberRow) && /Unfiled/.test(timberRow), JSON.stringify(timberRow));
     check('it shows the total and the VAT',
-      /£120\.00/.test(first) && /VAT £20\.00/.test(first), JSON.stringify(first));
+      /£120\.00/.test(timberRow) && /VAT £20\.00/.test(timberRow), JSON.stringify(timberRow));
     check('a receipt with no VAT says unknown rather than zero',
       /VAT unknown/.test(await page.textContent('.rclist')), 'no unknown label');
-    check('newest is listed first', /Timber/.test(first), JSON.stringify(first));
+    // the default order is by the date on the receipt: Stamps is the 6th,
+    // Lunch the 5th, Timber the 4th — whatever order they were uploaded in
+    check('the latest receipt date is listed first',
+      /Stamps/.test(await page.textContent('.rcrow:first-child')),
+      JSON.stringify(await page.textContent('.rcrow:first-child')));
 
-    await page.click('.rcrow:nth-child(1) .pick');
-    await page.click('.rcrow:nth-child(2) .pick');
+    // pick them by name, so the order they are listed in cannot change what moves
+    await page.click('.rcrow:has-text("Timber") .pick');
+    await page.click('.rcrow:has-text("Lunch with client") .pick');
     await page.waitForTimeout(400);
     check('selecting shows how many will move',
       /Move 2/.test(await page.textContent('.recentfoot')),
@@ -5029,6 +5034,7 @@ async function signIn(page) {
       window.__day = today;
       window.__mock.folders.push({ id: 'f-oak', name: 'Oakwood', created_at: '2026-01-01T09:00:00Z' });
       window.__mock.rows.push(
+        // all four sit on the same day, and were uploaded in the order a1..a4
         { id: 'a1', receipt_date: today, description: 'Sand', amount: 30, vat: 5,
           vat_rate: 20, folder_id: null, file_path: 'p/a1.jpg', file_type: 'image/jpeg',
           image_cleared: false, uploader_name: 'finn@x.com', created_at: '2026-02-01T09:00:00Z' },
@@ -5168,16 +5174,20 @@ async function signIn(page) {
       await page.isVisible('#recentsort') &&
       (await page.textContent('#recentsortlbl')) === 'Newest',
       await page.textContent('#recentsortlbl').catch(() => 'none'));
-    check('and it starts newest-added first',
-      (await strip())[0] === 'No total on this one', JSON.stringify(await strip()));
+    check('and it starts with the latest receipt date — Blocks was moved to the 16th',
+      (await strip())[0] === 'Blocks', JSON.stringify(await strip()));
 
     await page.click('#recentsort');
     await page.waitForTimeout(700);
     const menu = await page.textContent('.sbody');
-    check('the menu offers date and amount, and says which date it means',
+    check('the menu separates receipt date, date added and amount',
+      /Receipt Date/.test(menu) && /Date Added/.test(menu) && /Amount/.test(menu) &&
       /Newest first/.test(menu) && /Oldest first/.test(menu) &&
-      /Highest first/.test(menu) && /Lowest first/.test(menu) &&
-      /when the receipt was added/i.test(menu), menu.slice(0, 200));
+      /Newest added/.test(menu) && /Oldest added/.test(menu) &&
+      /Highest first/.test(menu) && /Lowest first/.test(menu), menu.slice(0, 260));
+    check('and says which date each one means',
+      /the one you type on the receipt screen/i.test(menu) &&
+      /when it was put into the app/i.test(menu), menu.slice(0, 300));
     check('with the current choice marked',
       await page.evaluate(() =>
         document.querySelector('#sort_new').classList.contains('on')), 'not marked');
@@ -5185,8 +5195,9 @@ async function signIn(page) {
 
     await page.click('#sort_old');
     await page.waitForTimeout(900);
-    check('oldest first reverses it, straight away',
-      (await strip())[0] === 'Sand' && (await page.textContent('#recentsortlbl')) === 'Oldest',
+    check('oldest receipt date first reverses it, straight away',
+      (await strip()).slice(-1)[0] === 'Blocks' &&
+      (await page.textContent('#recentsortlbl')) === 'Oldest',
       JSON.stringify(await strip()));
 
     await page.click('#recentsort');
@@ -5219,6 +5230,85 @@ async function signIn(page) {
                a1.description === 'Sand';
       }), JSON.stringify(await page.evaluate(() =>
         window.__mock.rows.map(r => [r.id, r.amount]))));
+
+    /* ---------- receipt date is not upload date ----------
+       His own example: one bought in January but uploaded in September, one
+       bought in August and uploaded before it. The two sorts must disagree. */
+    await page.evaluate(() => {
+      window.__mock.rows.length = 0;
+      window.__mock.rows.push(
+        { id: 'b1', receipt_date: '2026-01-10', description: 'Bought in January',
+          amount: 100, vat: 16.67, vat_rate: 20, folder_id: null, file_path: 'p/b1.jpg',
+          file_type: 'image/jpeg', image_cleared: false, uploader_name: 'finn@x.com',
+          created_at: '2026-09-10T09:00:00Z' },
+        { id: 'b2', receipt_date: '2026-08-20', description: 'Bought in August',
+          amount: 200, vat: 33.33, vat_rate: 20, folder_id: null, file_path: 'p/b2.jpg',
+          file_type: 'image/jpeg', image_cleared: false, uploader_name: 'finn@x.com',
+          created_at: '2026-09-01T09:00:00Z' });
+      view = new Date(2026, 0, 1);
+    });
+    await page.evaluate(() => loadMonth());
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => { rows = window.__mock.rows.slice(); renderRecent(); });
+    await page.waitForTimeout(700);
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_new');
+    await page.waitForTimeout(900);
+    check('Receipt Date newest first uses the date on the receipt, not the upload',
+      (await strip())[0] === 'Bought in August' && (await strip())[1] === 'Bought in January',
+      JSON.stringify(await strip()));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_addnew');
+    await page.waitForTimeout(900);
+    check('Date Added newest first gives the opposite order, as it should',
+      (await strip())[0] === 'Bought in January' && (await strip())[1] === 'Bought in August',
+      JSON.stringify(await strip()));
+    check('and the label says which one is in use',
+      (await page.textContent('#recentsortlbl')) === 'Newest added',
+      await page.textContent('#recentsortlbl'));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_addold');
+    await page.waitForTimeout(900);
+    check('oldest added turns that round too',
+      (await strip())[0] === 'Bought in August', JSON.stringify(await strip()));
+
+    /* ---------- and editing the date moves it ---------- */
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_new');
+    await page.waitForTimeout(900);
+    await page.click('#recentlist .rrow:has-text("Bought in January")');
+    await page.waitForTimeout(1300);
+    await page.evaluate(() => { document.querySelector('#f_date').value = '2026-12-01'; });
+    await page.click('#e_save');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1900);
+    }
+    await page.evaluate(() => { rows = window.__mock.rows.slice(); renderRecent(); });
+    await page.waitForTimeout(800);
+    check('changing a receipt date moves it in the order straight away',
+      (await strip())[0] === 'Bought in January', JSON.stringify(await strip()));
+    check('and the date it saved is the one on the receipt field',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'b1') || {}).receipt_date) === '2026-12-01',
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 'b1') || {}).receipt_date)));
+    check('with no second copy made',
+      await page.evaluate(() => window.__mock.rows.length) === 2,
+      await page.evaluate(() => window.__mock.rows.length));
+
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_low');
+    await page.waitForTimeout(900);
 
     check('the choice is written down so it survives closing the app',
       await page.evaluate(() => { try { return localStorage.getItem('recentSort'); }
@@ -5274,6 +5364,239 @@ async function signIn(page) {
       await page.textContent('#recentsortlbl').catch(() => 'none'));
 
     check('no JS errors through any of it', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
+
+  /* ====== PHASE 33 — searching Recently Added ====== */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() =>
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true }));
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+
+    // this month and last, so searching has to look past the month on screen
+    await page.evaluate(() => {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      const thisM = `${d.getFullYear()}-${p(d.getMonth() + 1)}`;
+      const prev = new Date(d.getFullYear(), d.getMonth() - 1, 10);
+      const prevM = `${prev.getFullYear()}-${p(prev.getMonth() + 1)}`;
+      window.__prevMonthName = ['January','February','March','April','May','June','July',
+        'August','September','October','November','December'][prev.getMonth()];
+      window.__mock.folders.push(
+        { id: 'f-flats', name: 'Flats', created_at: '2026-01-01T09:00:00Z' },
+        { id: 'f-hou', name: 'Houses', created_at: '2026-01-01T09:00:00Z' });
+      const mk = (id, date, desc, amount, vat, rate, folder, created) =>
+        ({ id, receipt_date: date, description: desc, amount, vat, net: amount === null ? null
+             : Math.round((amount - (vat || 0)) * 100) / 100,
+           vat_rate: rate, folder_id: folder, file_path: 'p/' + id + '.jpg',
+           file_type: 'image/jpeg', image_cleared: false, uploader_name: 'finn@x.com',
+           created_at: created });
+      window.__mock.rows.push(
+        mk('s1', thisM + '-05', 'Screwfix fixings', 120, 20, 20, 'f-flats', '2026-03-01T09:00:00Z'),
+        mk('s2', thisM + '-06', 'Timber merchant',  1245.60, 207.60, 20, 'f-hou', '2026-03-02T09:00:00Z'),
+        mk('s3', thisM + '-07', 'Diesel',           53.80, 8.33, null, null,      '2026-03-03T09:00:00Z'),
+        mk('s4', prevM + '-10', 'Screwfix screws',  45, 7.50, 20, 'f-flats',      '2026-03-04T09:00:00Z'),
+        mk('s5', prevM + '-11', 'Skip hire',        300, 50, 20, 'f-hou',         '2026-03-05T09:00:00Z'));
+    });
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1800);
+
+    const hits = () => page.$$eval('#recentlist .rrow b', els => els.map(e => e.textContent));
+    const type = async q => {
+      await page.fill('#recentsearch', q);
+      await page.dispatchEvent('#recentsearch', 'input');
+      await page.waitForTimeout(900);
+    };
+    const startRows = await page.evaluate(() => window.__mock.rows.length);
+
+    check('there is a search bar in Recently Added, with the sort beside it',
+      await page.isVisible('#recentsearch') && await page.isVisible('#recentsort') &&
+      (await page.getAttribute('#recentsearch', 'placeholder')) === 'Search receipts…',
+      await page.getAttribute('#recentsearch', 'placeholder').catch(() => 'missing'));
+    check('and no clear button until something is typed',
+      !(await page.isVisible('#recentclear')), 'clear button showing already');
+
+    /* ---------- by description ---------- */
+    await type('screwfix');
+    check('searching a description finds them, including one from another month',
+      (await hits()).length === 2 &&
+      (await hits()).join('|').includes('Screwfix fixings') &&
+      (await hits()).join('|').includes('Screwfix screws'),
+      JSON.stringify(await hits()));
+    check('a clear button appears once there is something to clear',
+      await page.isVisible('#recentclear'), 'no clear button');
+    await page.screenshot({ path: `${ROOT}/n46-search.png` });
+
+    /* ---------- case ---------- */
+    await type('SCREWFIX');
+    check('it does not care about capitals',
+      (await hits()).length === 2, JSON.stringify(await hits()));
+
+    /* ---------- by amount, in the ways people type it ---------- */
+    await type('120');
+    check('searching a bare amount finds the receipt at that total',
+      (await hits()).includes('Screwfix fixings'), JSON.stringify(await hits()));
+    await type('£120');
+    check('and with a pound sign in front',
+      (await hits()).includes('Screwfix fixings'), JSON.stringify(await hits()));
+    await type('120.00');
+    check('and written out to the penny',
+      (await hits()).includes('Screwfix fixings'), JSON.stringify(await hits()));
+    await type('1,245.60');
+    check('a total with a thousands comma is found however it is typed',
+      (await hits()).length === 1 && (await hits())[0] === 'Timber merchant',
+      JSON.stringify(await hits()));
+    await type('207.60');
+    check('the VAT figure is searchable too',
+      (await hits()).includes('Timber merchant'), JSON.stringify(await hits()));
+
+    /* ---------- by folder ---------- */
+    await type('flats');
+    check('searching a folder name finds what is filed in it',
+      (await hits()).length === 2 &&
+      (await hits()).join('|').includes('Screwfix fixings') &&
+      (await hits()).join('|').includes('Screwfix screws'),
+      JSON.stringify(await hits()));
+
+    /* ---------- by month ---------- */
+    await page.evaluate(() => { window.__q = window.__prevMonthName; });
+    await type(await page.evaluate(() => window.__prevMonthName));
+    check('searching a month name finds that month, across the month on screen',
+      (await hits()).length === 2 &&
+      (await hits()).join('|').includes('Skip hire'),
+      JSON.stringify(await hits()) + ' for ' + await page.evaluate(() => window.__prevMonthName));
+
+    /* ---------- nothing found ---------- */
+    await type('nothing like this exists');
+    check('no matches says so, plainly',
+      /No receipts found/.test(await page.textContent('#recentlist')) &&
+      (await hits()).length === 0,
+      (await page.textContent('#recentlist')).slice(0, 80));
+
+    /* ---------- clearing ---------- */
+    await page.click('#recentclear');
+    await page.waitForTimeout(800);
+    check('the X clears it and the normal list comes back',
+      (await page.inputValue('#recentsearch')) === '' &&
+      !(await page.isVisible('#recentclear')) &&
+      (await hits()).length === 3,
+      JSON.stringify(await hits()));
+
+    /* ---------- search and sort together ---------- */
+    await type('screwfix');
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_high');
+    await page.waitForTimeout(900);
+    check('sorting applies to what the search found, not to everything',
+      (await hits()).length === 2 && (await hits())[0] === 'Screwfix fixings',
+      JSON.stringify(await hits()));
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_low');
+    await page.waitForTimeout(900);
+    check('and turning the sort round turns the results round',
+      (await hits())[0] === 'Screwfix screws', JSON.stringify(await hits()));
+    check('the search is still what it was',
+      (await page.inputValue('#recentsearch')) === 'screwfix',
+      await page.inputValue('#recentsearch'));
+
+    // and with the receipt date, which is the one that matters
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_new');
+    await page.waitForTimeout(900);
+    check('search plus Receipt Date newest first orders the matches by their own date',
+      (await hits()).length === 2 && (await hits())[0] === 'Screwfix fixings',
+      JSON.stringify(await hits()));
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_old');
+    await page.waitForTimeout(900);
+    check('and oldest receipt date first puts the older purchase on top',
+      (await hits())[0] === 'Screwfix screws', JSON.stringify(await hits()));
+    await page.click('#recentsort');
+    await page.waitForTimeout(700);
+    await page.click('#sort_low');
+    await page.waitForTimeout(900);
+
+    /* ---------- opening one from the results ---------- */
+    await page.click('#recentlist .rrow:has-text("Screwfix fixings")');
+    await page.waitForTimeout(1300);
+    check('a search result opens the same editor as anywhere else',
+      (await page.textContent('.shead h3')) === 'Edit receipt' &&
+      await page.isVisible('#f_amt') && await page.isVisible('#f_folderpick'),
+      await page.textContent('.shead h3').catch(() => 'none'));
+    await page.fill('#f_amt', '135');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    check('with the VAT arithmetic working as it always does',
+      (await page.inputValue('#f_vat')) === '22.50', await page.inputValue('#f_vat'));
+    await page.click('#e_save');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1900);
+    }
+    check('saving updates the receipt that was already there',
+      await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 's1') || {}).amount) === 135,
+      JSON.stringify(await page.evaluate(() =>
+        (window.__mock.rows.find(r => r.id === 's1') || {}).amount)));
+    check('and makes no second copy of it',
+      await page.evaluate(() => window.__mock.rows.length) === startRows,
+      await page.evaluate(() => window.__mock.rows.length));
+    await page.waitForTimeout(900);
+    check('the results are still up, redrawn with the new figure',
+      (await page.inputValue('#recentsearch')) === 'screwfix' &&
+      /135/.test(await page.textContent('#recentlist')),
+      (await page.textContent('#recentlist')).slice(0, 160));
+    check('and searching the new figure finds it',
+      await (async () => { await type('135'); return (await hits()).includes('Screwfix fixings'); })(),
+      JSON.stringify(await hits()));
+
+    /* ---------- nothing else disturbed ---------- */
+    await page.click('#recentclear');
+    await page.waitForTimeout(800);
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    await page.fill('#f_desc', 'After searching');
+    await page.fill('#f_amt', '18');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(1900);
+    }
+    check('a normal receipt still saves with search on the page',
+      await page.evaluate(() => window.__mock.rows.some(r => r.description === 'After searching')),
+      'not saved');
+    check('and it turns up in a search straight away',
+      await (async () => { await type('after searching');
+                           return (await hits()).includes('After searching'); })(),
+      JSON.stringify(await hits()));
+    check('the calendar and totals are unaffected by any of it',
+      (await page.$$('#grid .cell')).length > 27 &&
+      (await page.textContent('#ttotal')).startsWith('£'), await page.textContent('#ttotal'));
+
+    check('no JS errors through searching', errors.length === 0, JSON.stringify(errors));
     await ctx.close();
   }
 
