@@ -98,10 +98,10 @@ label{display:block;font-size:13px;font-weight:400;color:var(--muted);margin:0 0
 
 /* ---------- app chrome ---------- */
 /* phone-first; on a laptop it stays a phone-width column rather than stretching */
-#app,#plan,#site,#emails{min-height:100%;display:flex;flex-direction:column;
+#app,#plan,#site,#emails,#stmt{min-height:100%;display:flex;flex-direction:column;
   max-width:540px;margin:0 auto;width:100%}
 @media(min-width:560px){
-  #app,#plan,#site,#emails{border-inline:1px solid var(--line)}
+  #app,#plan,#site,#emails,#stmt{border-inline:1px solid var(--line)}
   .cell{aspect-ratio:1/.86}
 }
 header{position:sticky;top:0;z-index:20;background:rgba(0,0,0,.8);
@@ -672,6 +672,40 @@ main{flex:1;padding:16px 12px 0}
   animation:sp .8s linear infinite}
 .loadmore.working .ldot{display:block}
 .emend{margin-top:14px;text-align:center;font-size:13px;color:var(--faint)}
+
+/* ---------- statements ----------
+   A document you keep, not a figure you count. Same cards, same spacing as the
+   rest of the app; only the actions differ. */
+.strow{display:flex;align-items:flex-start;gap:12px;padding:12px 13px;width:100%;
+  text-align:left;position:relative;flex-wrap:wrap}
+.strow + .strow::before{content:"";position:absolute;top:0;left:13px;right:13px;height:1px;
+  background:var(--line);transform:scaleY(.5)}
+.stkind{width:42px;height:52px;border-radius:8px;flex:none;display:grid;place-items:center;
+  background:var(--surface-2);font-size:10px;font-weight:700;color:var(--faint)}
+.stkind.pdf{background:rgba(255,69,58,.16);color:#ff6961}
+.stkind.img{background:rgba(10,132,255,.16);color:#5ea9ff}
+.strow .meta{flex:1;min-width:0}
+.strow .meta b{display:block;font-size:15px;font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strow .meta span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.stacts{display:flex;gap:8px;width:100%;margin-top:2px}
+.stacts button{flex:1;padding:9px 6px;border-radius:9px;font-size:13.5px;font-weight:600;
+  background:var(--surface-2);color:var(--text);
+  transition:transform .13s cubic-bezier(.32,.72,0,1),background-color .16s ease}
+.stacts button:active{transform:scale(.975)}
+.stacts .stopen{background:var(--accent);color:#fff}
+.stacts .stdel{color:#ff6961}
+.sthead{font-size:12.5px;color:var(--muted);line-height:1.5;margin-bottom:12px}
+
+/* the statement picker that sits inside the export sheet */
+.incrow{display:flex;align-items:center;gap:11px;padding:13px;width:100%;text-align:left}
+.incrow .meta{flex:1;min-width:0}
+.incrow .meta b{display:block;font-size:15px;font-weight:500}
+.incrow .meta span{display:block;font-size:12.5px;color:var(--muted)}
+.stsel{margin-top:10px}
+.stsel .bar2{display:flex;align-items:center;justify-content:space-between;
+  padding:0 2px 8px;font-size:13px;color:var(--muted)}
+.stsel .bar2 button{font-size:13.5px;font-weight:600;color:var(--accent)}
 /* rows that have just arrived settle in; the ones above them do not move */
 .emnew{animation:rowin .24s ease both}
 @keyframes rowin{from{opacity:0;transform:translateY(6px)}}
@@ -794,7 +828,7 @@ main{flex:1;padding:16px 12px 0}
 
 /* one section giving way to another */
 @keyframes sectin{from{opacity:0;transform:translateY(8px)}}
-#app:not(.hide),#plan:not(.hide),#site:not(.hide),#emails:not(.hide){
+#app:not(.hide),#plan:not(.hide),#site:not(.hide),#emails:not(.hide),#stmt:not(.hide){
   animation:sectin .24s cubic-bezier(.32,.72,0,1) both}
 
 /* a tap should be felt before anything else happens */
@@ -1007,6 +1041,42 @@ main{flex:1;padding:16px 12px 0}
 </section>
 
 <input type="file" id="sitefiles" accept="image/*" multiple class="hide">
+
+<!-- ============ STATEMENTS ============
+     Bank, card and account statements. Documents in their own right: they are
+     never receipts, never counted, and never touch the VAT figures. -->
+<section id="stmt" class="hide">
+  <header>
+    <div class="hrow">
+      <button class="icb" id="stback" aria-label="Back to receipts">
+        <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="mnav"><b class="mtitle" style="pointer-events:none">Statements</b></div>
+      <button class="icb" id="stfilter" aria-label="Filter by kind">
+        <svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></svg>
+      </button>
+    </div>
+    <div class="totals">
+      <div><span>Statements</span><b id="stcount">0</b></div>
+      <div><span>Showing</span><b id="stscope" class="accent">All</b></div>
+    </div>
+  </header>
+
+  <main>
+    <div id="stlist"></div>
+  </main>
+
+  <div class="bar">
+    <button class="btn btn-primary" id="addstatement">
+      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12h14"/></svg>
+      Add Statement
+    </button>
+  </div>
+</section>
+
+<input type="file" id="stfile" accept="image/*,application/pdf" class="hide">
 
 <!-- ============ EMAILS ============ -->
 <section id="emails" class="hide">
@@ -2202,7 +2272,8 @@ function pickProjectInline(onPick) {
 /* ---------- the page ---------- */
 function showPlanning(on) {
   $('#plan').classList.toggle('hide', !on);
-  if (on) { $('#site').classList.add('hide'); $('#emails').classList.add('hide'); }
+  if (on) { $('#site').classList.add('hide'); $('#emails').classList.add('hide');
+             $('#stmt').classList.add('hide'); }
   $('#app').classList.toggle('hide', on);
   window.scrollTo(0, 0);
 }
@@ -2686,7 +2757,8 @@ async function loadSiteRecords() {
 
 function showSite(on) {
   $('#site').classList.toggle('hide', !on);
-  if (on) { $('#plan').classList.add('hide'); $('#emails').classList.add('hide'); }
+  if (on) { $('#plan').classList.add('hide'); $('#emails').classList.add('hide');
+             $('#stmt').classList.add('hide'); }
   $('#app').classList.toggle('hide', on);
   window.scrollTo(0, 0);
 }
@@ -3196,7 +3268,8 @@ function disconnectGmail() {
 /* ---------- the page ---------- */
 function showEmails(on) {
   $('#emails').classList.toggle('hide', !on);
-  if (on) { $('#plan').classList.add('hide'); $('#site').classList.add('hide'); }
+  if (on) { $('#plan').classList.add('hide'); $('#site').classList.add('hide');
+             $('#stmt').classList.add('hide'); }
   $('#app').classList.toggle('hide', on);
   window.scrollTo(0, 0);
 }
@@ -3586,16 +3659,16 @@ function loadPdfJs() {
     });
 }
 
-async function openAttachment(msg, full, headers, file, alreadyImported) {
-  const k = attachKind(file);
-  busy(true, 'Fetching the attachment…');
-  let bytes;
-  try {
-    bytes = await fetchAttachment(msg, file);
-  } catch (e) {
-    busy(false); toast(gmailError(e), true); if (!gmailLive()) paintEmails(); return;
-  }
-  busy(false);
+/* ---------- the document viewer ----------
+   One viewer, whatever the document is and wherever it came from: a Gmail
+   attachment, a statement, anything else with bytes and a name. A PDF renders
+   page by page with page controls; an image is shown as it is; both pinch,
+   zoom and pan with the same engine the receipt viewer uses.
+
+   `action` is optional — give it { label, run } and a button appears beside
+   Close; leave it out and the viewer is simply a way of reading something. */
+async function showDocument(bytes, name, mime, action) {
+  const k = attachKind({ filename: name, mimeType: mime });
 
   const overlay = el('div', { class: 'viewer', id: 'aviewer' });
   const body = el('div', { class: 'vbody', id: 'vbody' });
@@ -3609,7 +3682,7 @@ async function openAttachment(msg, full, headers, file, alreadyImported) {
   overlay.appendChild(el('div', { class: 'vhead' }, [
     el('button', { class: 'icb', id: 'avclose', 'aria-label': 'Close', onclick: close,
       html: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>' }),
-    el('b', { text: file.filename || 'Attachment' }),
+    el('b', { text: name || 'Document' }),
     el('button', { class: 'icb vreset', 'aria-label': 'Reset zoom',
       html: '<svg viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 012-2h3M16 3h3a2 2 0 012 2v3M21 16v3a2 2 0 01-2 2h-3M8 21H5a2 2 0 01-2-2v-3"/></svg>' })
   ]));
@@ -3630,8 +3703,8 @@ async function openAttachment(msg, full, headers, file, alreadyImported) {
 
   overlay.appendChild(el('div', { class: 'vfoot' }, [
     el('button', { class: 'btn btn-ghost', id: 'avback', text: 'Close', onclick: close }),
-    el('button', { class: 'btn btn-primary', id: 'avadd', text: 'Add to Receipts',
-      onclick: () => { close(); importAttachment(msg, full, headers, file, alreadyImported, bytes); } })
+    action ? el('button', { class: 'btn btn-primary', id: 'avadd', text: action.label,
+      onclick: () => { close(); action.run(bytes); } }) : null
   ]));
 
   document.body.appendChild(overlay);
@@ -3696,13 +3769,13 @@ async function openAttachment(msg, full, headers, file, alreadyImported) {
       bar.classList.add('hide');
       body.innerHTML = '';
       body.appendChild(el('p', { class: 'vmsg', id: 'avfail', text:
-        'This PDF could not be displayed here — the viewer needs a connection the '
-        + 'first time it is used. You can still add it to your receipts.' }));
+        'This PDF could not be displayed here — the viewer needs a connection '
+        + 'the first time it is used.' }));
     }
   } else {
     const blob = new Blob([bytes], { type: k.type });
     objectUrl = URL.createObjectURL(blob);
-    const img = el('img', { id: 'avimg', src: objectUrl, alt: file.filename || 'Attachment',
+    const img = el('img', { id: 'avimg', src: objectUrl, alt: name || 'Document',
                             decoding: 'async' });
     img.onerror = () => {
       body.innerHTML = '';
@@ -3713,6 +3786,22 @@ async function openAttachment(msg, full, headers, file, alreadyImported) {
     gestures = bindZoomGestures(overlay, img, body);
     bindZoomButtons();
   }
+}
+/* The Gmail attachment route into that viewer: fetch the bytes, then show them,
+   with Add to Receipts wired to the existing import. */
+async function openAttachment(msg, full, headers, file, alreadyImported) {
+  busy(true, 'Fetching the attachment…');
+  let bytes;
+  try {
+    bytes = await fetchAttachment(msg, file);
+  } catch (e) {
+    busy(false); toast(gmailError(e), true); if (!gmailLive()) paintEmails(); return;
+  }
+  busy(false);
+  await showDocument(bytes, file.filename || 'Attachment', file.mimeType, {
+    label: 'Add to Receipts',
+    run: b => importAttachment(msg, full, headers, file, alreadyImported, b)
+  });
 }
 
 /* The two Gmail columns on the receipts table are optional extras, added by
@@ -3905,6 +3994,374 @@ async function duplicateWarning(amt, invoiceNo, dateStr, excludeId) {
   return await ask(dupTitle(m.kind), lines.join('\n'), 'Add anyway');
 }
 
+
+/* ============================================================
+   STATEMENTS
+   Bank, card and account statements — documents you keep, not figures you
+   count. They are their own thing: nothing here is a receipt, nothing appears
+   on the calendar, in a total, in the VAT, in Recently Added or in a folder,
+   and no receipt has ever needed a statement to exist.
+
+   The only place the two meet is by choice: the receipt PDF export can be
+   asked to append selected statements after the receipts.
+   ============================================================ */
+let statements = [];
+let stmtKind = null;                   // a category, or null for all
+let stmtTable = null;                  // null unknown · true ready · false not created yet
+
+const STMT_DIR = 'statements';         // its own folder inside the private bucket
+const STMT_KINDS = ['Bank', 'Credit card', 'Account', 'Other'];
+const STMT_SQL_HINT = 'Statements needs its table adding to Supabase. '
+  + 'The setup SQL came with this update — run sql/statements-setup.sql in the '
+  + 'SQL editor, then come back.';
+
+function stmtMissing(err) {
+  const m = String((err && (err.message || err.msg)) || err || '');
+  const code = (err && err.code) || '';
+  return code === '42P01' || code === 'PGRST205' ||
+         /relation .*statements.* does not exist|could not find the table .*statements/i.test(m);
+}
+
+async function loadStatements() {
+  const res = await db.from('statements').select('*');
+  if (res.error) {
+    if (stmtMissing(res.error)) { stmtTable = false; statements = []; return false; }
+    toast(niceError(res.error), true);
+    return false;
+  }
+  stmtTable = true;
+  // newest period first: the one you want is nearly always the most recent
+  statements = (res.data || []).sort((a, b) =>
+    String(b.period_start).localeCompare(String(a.period_start)) ||
+    String(b.created_at).localeCompare(String(a.created_at)));
+  return true;
+}
+
+function showStatements(on) {
+  $('#stmt').classList.toggle('hide', !on);
+  if (on) {
+    $('#plan').classList.add('hide');
+    $('#site').classList.add('hide');
+    $('#emails').classList.add('hide');
+  }
+  $('#app').classList.toggle('hide', on);
+  window.scrollTo(0, 0);
+}
+
+async function openStatements() {
+  busy(true, 'Loading statements…');
+  await loadPlanning().catch(() => {});        // jobs, for the optional project
+  const ok = await loadStatements();
+  busy(false);
+  showStatements(true);
+  if (!ok && stmtTable === false) {
+    $('#stlist').innerHTML = '';
+    $('#stlist').appendChild(el('p', { class: 'empty', text: STMT_SQL_HINT }));
+    return;
+  }
+  if (!ok) { showStatements(false); return; }
+  paintStatements();
+}
+
+$('#stback').onclick = () => showStatements(false);
+$('#addstatement').onclick = () => openStatementForm(null);
+$('#stfilter').onclick = () => {
+  const used = [...new Set(statements.map(s => s.category).filter(Boolean))];
+  sheet({
+    title: 'Show',
+    body: [ el('div', { class: 'card' }, [
+      el('button', { class: 'ditem' + (stmtKind ? '' : ' on'), id: 'stall',
+        onclick: () => { stmtKind = null; closeSheet(); paintStatements(); } }, [
+        el('span', { class: 'lbl', text: 'All statements' })
+      ]),
+      ...used.map(k => el('button', {
+        class: 'ditem' + (stmtKind === k ? ' on' : ''),
+        onclick: () => { stmtKind = k; closeSheet(); paintStatements(); } }, [
+        el('span', { class: 'lbl', text: k })
+      ]))
+    ]) ]
+  });
+};
+
+const stmtIsPdf = s => s.file_type === 'application/pdf' ||
+                       /\.pdf$/i.test(String(s.file_path || ''));
+
+/* "August 2026", or "1 Aug – 31 Aug 2026" when an end date was given */
+function stmtPeriod(s) {
+  const a = prettyDate(String(s.period_start));
+  return s.period_end ? a + '  –  ' + prettyDate(String(s.period_end)) : a;
+}
+
+const stmtLine = s => [ s.category || 'Statement',
+                        stmtIsPdf(s) ? 'PDF' : 'Image',
+                        s.project_id ? projectName(s.project_id) : null
+                      ].filter(Boolean).join('  ·  ');
+
+function paintStatements() {
+  const shown = stmtKind ? statements.filter(s => s.category === stmtKind) : statements;
+
+  $('#stcount').textContent = String(shown.length);
+  $('#stscope').textContent = stmtKind || 'All';
+
+  const host = $('#stlist');
+  host.innerHTML = '';
+
+  if (!shown.length) {
+    host.appendChild(el('p', { class: 'empty', text: statements.length
+      ? 'Nothing of that kind yet.'
+      : 'No statements yet. Add a bank or card statement below — they are kept '
+        + 'separately from your receipts, and can be attached to a receipt PDF '
+        + 'when you export one.' }));
+    return;
+  }
+
+  host.appendChild(el('p', { class: 'sthead',
+    text: 'Kept separately from receipts. Newest period first.' }));
+
+  host.appendChild(el('div', { class: 'card' }, shown.map(s =>
+    el('div', { class: 'strow' }, [
+      el('span', { class: 'stkind' + (stmtIsPdf(s) ? ' pdf' : ' img'),
+                   text: stmtIsPdf(s) ? 'PDF' : 'IMG' }),
+      el('div', { class: 'meta' }, [
+        el('b', { text: s.title }),
+        el('span', { text: stmtPeriod(s) }),
+        el('span', { text: stmtLine(s) })
+      ]),
+      el('div', { class: 'stacts' }, [
+        el('button', { class: 'stopen', text: 'Open', onclick: () => openStatement(s) }),
+        el('button', { class: 'stget',  text: 'Download', onclick: () => downloadStatement(s) }),
+        el('button', { class: 'stedit', text: 'Edit', onclick: () => openStatementForm(s) }),
+        el('button', { class: 'stdel',  text: 'Delete', onclick: () => deleteStatement(s) })
+      ])
+    ]))));
+}
+
+/* A signed link to the file itself, fetched fresh: these are private. */
+async function statementUrl(s) {
+  const { data, error } = await db.storage.from(BUCKET).createSignedUrl(s.file_path, 3600);
+  if (error) throw error;
+  const u = data && data.signedUrl;
+  if (!u) throw new Error('That statement could not be found in storage.');
+  return u;
+}
+
+/* Opens in the viewer the app already has: the PDF one for a PDF, the picture
+   one for a photograph. Nothing new was built for this. */
+async function openStatement(s) {
+  busy(true, 'Opening…');
+  let bytes;
+  try {
+    const url = await statementUrl(s);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('That statement could not be downloaded.');
+    bytes = new Uint8Array(await res.arrayBuffer());
+    if (!bytes.length) throw new Error('That statement file is empty.');
+  } catch (e) {
+    busy(false);
+    toast(niceError(e), true);
+    return;
+  }
+  busy(false);
+  showDocument(bytes, s.title, stmtIsPdf(s) ? 'application/pdf' : (s.file_type || 'image/jpeg'));
+}
+
+/* The original file, exactly as it was put in — a PDF stays a PDF. */
+async function downloadStatement(s) {
+  busy(true, 'Fetching…');
+  try {
+    const url = await statementUrl(s);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('That statement could not be downloaded.');
+    const blob = await res.blob();
+    busy(false);
+
+    const ext = (String(s.file_path).split('.').pop() || 'pdf').toLowerCase();
+    const name = s.title.replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.' + ext;
+    const u = URL.createObjectURL(blob);
+    const a = el('a', { href: u, download: name });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 15000);
+    toast('Statement downloaded');
+  } catch (e) {
+    busy(false);
+    toast(niceError(e), true);
+  }
+}
+
+async function deleteStatement(s) {
+  const ok = await ask('Delete this statement?',
+    `"${s.title}" will be removed for everyone. This cannot be undone.`, 'Delete');
+  if (!ok) return;
+  busy(true, 'Deleting…');
+  try {
+    const res = await db.from('statements').delete().eq('id', s.id);
+    if (res.error) throw res.error;
+    await db.storage.from(BUCKET).remove([s.file_path]).catch(() => {});
+    thumbs.delete(s.file_path);
+    await loadStatements();
+    busy(false);
+    paintStatements();
+    toast('Statement deleted');
+  } catch (e) {
+    busy(false);
+    toast(niceError(e), true);
+  }
+}
+
+function openStatementForm(rec) {
+  const editing = !!rec;
+  let projectId = editing ? rec.project_id : null;
+  let category = editing ? (rec.category || null) : 'Bank';
+  let chosen = null;                       // a File waiting to go up
+
+  const title = el('input', { type: 'text', id: 'st_title', maxlength: '120',
+    placeholder: 'e.g. Barclays — August', value: editing ? rec.title : '' });
+  const from = el('input', { type: 'date', id: 'st_from',
+    value: editing ? String(rec.period_start) : ymd(new Date()) });
+  const to = el('input', { type: 'date', id: 'st_to',
+    value: editing && rec.period_end ? String(rec.period_end) : '' });
+
+  const kinds = el('div', { class: 'statuses', id: 'st_kinds' });
+  const paintKinds = () => {
+    kinds.innerHTML = '';
+    STMT_KINDS.forEach(k => kinds.appendChild(el('button', {
+      class: category === k ? 'on' : '', text: k,
+      onclick: () => { category = k; paintKinds(); } })));
+  };
+  paintKinds();
+
+  const jobBtn = el('button', { class: 'pickproject', id: 'st_job' });
+  const paintJob = () => {
+    jobBtn.innerHTML = '';
+    const p = projectById(projectId);
+    jobBtn.appendChild(el('span', { class: 'lbl', text: p ? p.name : 'None' }));
+    jobBtn.appendChild(el('span', { class: 'chev' }));
+  };
+  jobBtn.onclick = () => pickProjectInline(id => { projectId = id; paintJob(); });
+  paintJob();
+
+  const fileLine = el('div', { class: 'pvfile', id: 'st_file' });
+  const paintFile = () => {
+    fileLine.innerHTML = '';
+    const name = chosen ? chosen.name
+      : editing ? String(rec.file_path).split('/').pop() : null;
+    const size = chosen ? chosen.size : (editing ? rec.file_size : null);
+    fileLine.appendChild(el('div', {}, [
+      el('b', { text: name || 'No document chosen yet' }),
+      el('span', { text: name
+        ? [ (chosen ? (/pdf/i.test(chosen.type) ? 'PDF' : 'Image')
+                    : (stmtIsPdf(rec) ? 'PDF' : 'Image')),
+            size ? fileSizeText(size) : null,
+            editing && !chosen ? 'already stored' : null ].filter(Boolean).join('  ·  ')
+        : 'PDF, JPG or PNG' })
+    ]));
+  };
+  paintFile();
+
+  const picker = $('#stfile');
+  picker.onchange = e => {
+    const f = (e.target.files || [])[0];
+    picker.value = '';
+    if (!f) return;
+    if (!/^image\/(jpeg|jpg|png|heic|heif|webp)$|^application\/pdf$/i.test(f.type) &&
+        !/\.(pdf|jpe?g|png|heic|heif|webp)$/i.test(f.name)) {
+      toast('Statements can be a PDF, JPG or PNG', true);
+      return;
+    }
+    chosen = f;
+    paintFile();
+  };
+  const pickBtn = el('button', { class: 'btn btn-ghost btn-full', id: 'st_pick',
+    text: editing ? 'Replace document' : '+  Choose document',
+    onclick: () => { picker.value = ''; picker.click(); } });
+
+  const save = el('button', { class: 'btn btn-primary', id: 'st_save',
+    text: editing ? 'Save changes' : 'Save statement' });
+
+  save.onclick = async () => {
+    const what = title.value.trim();
+    if (!what) { title.focus(); toast('Give the statement a name', true); return; }
+    if (!from.value) { from.focus(); toast('Pick the statement date or period start', true); return; }
+    if (to.value && to.value < from.value) {
+      to.focus(); toast('The period ends before it starts', true); return;
+    }
+    if (!editing && !chosen) { toast('Choose the statement document', true); return; }
+
+    save.disabled = true;
+    busy(true, editing ? 'Saving…' : 'Uploading statement…');
+    let uploaded = null;
+    try {
+      const payload = {
+        title: what,
+        period_start: from.value,
+        period_end: to.value || null,
+        category: category || null,
+        project_id: projectId || null
+      };
+
+      if (chosen) {
+        const ext = (chosen.name.split('.').pop() || 'pdf').toLowerCase().slice(0, 5);
+        const [y, m] = from.value.split('-');
+        const path = `${STMT_DIR}/${y}/${m}/${crypto.randomUUID()}.${ext}`;
+        const type = /pdf/i.test(chosen.type) || ext === 'pdf'
+          ? 'application/pdf' : (chosen.type || 'image/jpeg');
+        const put = await db.storage.from(BUCKET)
+          .upload(path, chosen, { contentType: type, upsert: false });
+        if (put.error) throw put.error;
+        uploaded = path;
+        payload.file_path = path;
+        payload.file_type = type;
+        payload.file_size = chosen.size;
+      }
+
+      const old = editing ? rec.file_path : null;
+      if (editing) {
+        const up = await db.from('statements').update(payload).eq('id', rec.id);
+        if (up.error) throw up.error;
+        // the document it replaced is no longer referenced by anything
+        if (uploaded && old && old !== uploaded) {
+          await db.storage.from(BUCKET).remove([old]).catch(() => {});
+          thumbs.delete(old);
+        }
+      } else {
+        const ins = await db.from('statements').insert(Object.assign({}, payload,
+          { created_by: session.user.id, created_by_name: session.user.email }));
+        if (ins.error) throw ins.error;
+      }
+
+      await loadStatements();
+      busy(false); save.disabled = false;
+      closeSheet();
+      paintStatements();
+      toast(editing ? 'Statement updated' : 'Statement saved');
+    } catch (e) {
+      // a half-finished save must not leave a document stranded in storage
+      if (uploaded) await db.storage.from(BUCKET).remove([uploaded]).catch(() => {});
+      busy(false); save.disabled = false;
+      toast(stmtMissing(e) ? STMT_SQL_HINT : niceError(e), true);
+    }
+  };
+
+  sheet({
+    title: editing ? 'Edit statement' : 'New statement',
+    sub: editing ? stmtPeriod(rec) : '',
+    body: [
+      el('div', {}, [el('label', { for: 'st_title', text: 'Name' }), title]),
+      el('div', {}, [el('label', { text: 'Kind' }), kinds]),
+      el('div', { class: 'row2' }, [
+        el('div', {}, [el('label', { for: 'st_from', text: 'Date / period from' }), from]),
+        el('div', {}, [el('label', { for: 'st_to', text: 'Period to (optional)' }), to])
+      ]),
+      el('div', {}, [el('label', { text: 'Job (optional)' }), jobBtn]),
+      el('div', {}, [el('label', { text: 'Document' }), fileLine, pickBtn])
+    ],
+    foot: [
+      el('button', { class: 'btn btn-ghost', text: 'Cancel', onclick: closeSheet }),
+      save
+    ]
+  });
+}
+
 /* ============================================================
    MENU DRAWER
    ============================================================ */
@@ -3943,7 +4400,8 @@ function openMenu() {
       item('Receipts',
         '<svg viewBox="0 0 24 24"><path d="M4 3h16v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M8 8h8M8 12h5"/></svg>',
         { on: true, tint: true,
-          onclick: () => { close(); showPlanning(false); showSite(false); showEmails(false); } }),
+          onclick: () => { close(); showPlanning(false); showSite(false); showEmails(false);
+                           showStatements(false); } }),
       item('Plans',
         '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>',
         { chev: true, id: 'mplans', onclick: () => { close(); openPlanning(); } })
@@ -3965,6 +4423,10 @@ function openMenu() {
         '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h3l2-2h4l2 2h3a2 2 0 012 2v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>' +
         '<circle cx="12" cy="12" r="3.4"/></svg>',
         { chev: true, id: 'msite', onclick: () => { close(); openSiteRecords(); } }),
+      item('Statements',
+        '<svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15a0 0 0 010 0H6a0 0 0 010 0z"/>' +
+        '<path d="M15 2v5h5"/><path d="M9 13h6M9 17h4"/></svg>',
+        { chev: true, id: 'mstmt', onclick: () => { close(); openStatements(); } }),
       item('Emails',
         '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/>' +
         '<path d="M3 7l9 6 9-6"/></svg>',
@@ -5751,6 +6213,7 @@ async function openMonthExport() {
     if (res.error) throw res.error;
     all = res.data || [];
   } catch (e) { busy(false); toast(niceError(e), true); return; }
+  await loadStatements().catch(() => {});   // optional extra; never blocks the export
   busy(false);
 
   if (!all.length) { toast('Nothing filed yet'); return; }
@@ -5759,7 +6222,7 @@ async function openMonthExport() {
   const picked = new Set();
   const inMonth = k => all.filter(r => String(r.receipt_date).slice(0, 7) === k);
 
-  let summary, body, foot;
+  let summary, body, foot, picker;
 
   const paint = () => {
     const chosen = sanitiseRows(months.filter(k => picked.has(k)).flatMap(inMonth));
@@ -5790,18 +6253,23 @@ async function openMonthExport() {
     })));
 
     foot.innerHTML = '';
+    const nStmt = picker ? picker.count() : 0;
     const go = el('button', { class: 'btn btn-primary btn-full',
-      text: picked.size ? `Download PDF · ${picked.size} month${picked.size === 1 ? '' : 's'}`
-                        : 'Select a month' });
+      text: picked.size
+        ? `Download PDF · ${picked.size} month${picked.size === 1 ? '' : 's'}`
+          + (nStmt ? ` + ${nStmt} statement${nStmt === 1 ? '' : 's'}` : '')
+        : 'Select a month' });
     go.disabled = !picked.size;
     go.onclick = () => {
       const keys = months.filter(k => picked.has(k));      // oldest last, sorted below
+      const stmts = picker ? picker.picked() : [];
       closeSheet();
       buildReport({
         rows: chosen,
         title: 'Receipt report',
         scope: describeMonths(keys),
         monthKeys: keys,
+        statements: stmts,
         filename: keys.length === 1
           ? `Receipts ${monthLabelOf(keys[0])}.pdf`
           : 'Receipt report.pdf'
@@ -5813,11 +6281,12 @@ async function openMonthExport() {
   summary = el('div', { class: 'card selsum' });
   body = el('div', { class: 'selbody' });
   foot = el('div', { class: 'sfoot' });
+  picker = statementPicker(() => paint());
 
   const card = sheet({
     title: 'Select Months',
     sub: 'One PDF, however many you tick',
-    body: [ summary, body ]
+    body: [ summary, body, picker.host ]
   });
   card.appendChild(foot);
   paint();
@@ -5833,6 +6302,7 @@ async function openReportBuilder() {
     if (res.error) throw res.error;
     all = res.data || [];
   } catch (e) { busy(false); toast(niceError(e), true); return; }
+  await loadStatements().catch(() => {});   // optional extra; never blocks the export
   busy(false);
 
   if (!all.length) { toast('Nothing filed yet'); return; }
@@ -5849,7 +6319,7 @@ async function openReportBuilder() {
       pickedReceipts.has(r.id));
   };
 
-  let summary, foot, body;
+  let summary, foot, body, picker;
 
   const paint = () => {
     const chosen = sanitiseRows(resolve());
@@ -5862,8 +6332,11 @@ async function openReportBuilder() {
       el('div', {}, [el('span', { text: 'Total' }),    el('b', { class: 'accent', text: money(s.total) })])
     ]));
     foot.innerHTML = '';
+    const nStmt = picker ? picker.count() : 0;
     const go = el('button', { class: 'btn btn-primary btn-full',
-      text: s.n ? `Create PDF · ${s.n} receipt${s.n === 1 ? '' : 's'}` : 'Nothing selected' });
+      text: s.n ? `Create PDF · ${s.n} receipt${s.n === 1 ? '' : 's'}`
+                  + (nStmt ? ` + ${nStmt} statement${nStmt === 1 ? '' : 's'}` : '')
+                : 'Nothing selected' });
     go.disabled = !s.n;
     go.onclick = () => {
       const mKeys = [...pickedMonths];
@@ -5871,6 +6344,7 @@ async function openReportBuilder() {
       const parts = [];
       if (mKeys.length) parts.push(describeMonths(mKeys));
       if (!mKeys.length && !fNames.length) parts.push('Selected receipts');
+      const stmts = picker ? picker.picked() : [];
       closeSheet();
       buildReport({
         rows: chosen,
@@ -5878,6 +6352,7 @@ async function openReportBuilder() {
         scope: parts.join('  ·  '),
         monthKeys: mKeys,          // every month ticked, even one that turns out empty
         folderScope: fNames.join(', ') || null,
+        statements: stmts,
         filename: 'Receipt report.pdf'
       });
     };
@@ -5938,17 +6413,93 @@ async function openReportBuilder() {
   summary = el('div', { class: 'card selsum' });
   body = el('div', { class: 'selbody' });
   foot = el('div', { class: 'sfoot' });
+  picker = statementPicker(() => paint());
 
   const card = sheet({
     title: 'Create report',
     sub: 'Combine any of these',
-    body: [ summary, body ]
+    body: [ summary, body, picker.host ]
   });
   card.appendChild(foot);
   rebuild();
 }
 
-async function buildReport({ rows: list, title, scope, monthKeys, folderScope, filename }) {
+/* ---------- Include Statements ----------
+   Off unless asked for, and nothing is ticked by default: a receipt report is a
+   receipt report until you say otherwise. Returns the element to drop into the
+   export sheet, and a getter for whatever ended up ticked. */
+function statementPicker(onChange) {
+  const chosen = new Set();
+  let on = false;
+  const host = el('div', { class: 'stsel', id: 'stsel' });
+
+  const toggle = el('button', { class: 'selrow', id: 'incstmts' });
+
+  const paint = () => {
+    toggle.innerHTML = '';
+    toggle.className = 'selrow' + (on ? ' on' : '');
+    toggle.appendChild(el('span', { class: 'pick' + (on ? ' on' : ''), id: 'incpick' }));
+    toggle.appendChild(el('div', { class: 'selmeta' }, [
+      el('b', { text: 'Include Statements' }),
+      el('span', { id: 'inccount', text: !stmtTable && stmtTable !== null
+        ? 'Statements is not set up yet'
+        : on ? (chosen.size ? chosen.size + ' selected' : 'None selected yet')
+             : (statements.length ? statements.length + ' available' : 'None added yet') })
+    ]));
+
+    host.innerHTML = '';
+    host.appendChild(el('div', { class: 'card' }, [toggle]));
+
+    if (!on) { if (onChange) onChange(); return; }
+
+    if (!statements.length) {
+      host.appendChild(el('p', { class: 'hintline', id: 'incnone',
+        text: stmtTable === false ? STMT_SQL_HINT
+          : 'No statements have been added yet. Add one in Statements first.' }));
+      if (onChange) onChange();
+      return;
+    }
+
+    const bar = el('div', { class: 'bar2' }, [
+      el('span', { text: chosen.size + ' of ' + statements.length + ' selected' }),
+      el('button', { id: 'incall',
+        text: chosen.size === statements.length ? 'Clear all' : 'Select all',
+        onclick: () => {
+          if (chosen.size === statements.length) chosen.clear();
+          else statements.forEach(x => chosen.add(x.id));
+          paint();
+        } })
+    ]);
+    host.appendChild(bar);
+
+    host.appendChild(el('div', { class: 'card' }, statements.map(st => {
+      const ticked = chosen.has(st.id);
+      return el('button', { class: 'incrow selrow' + (ticked ? ' on' : ''),
+        onclick: () => { ticked ? chosen.delete(st.id) : chosen.add(st.id); paint(); } }, [
+        el('span', { class: 'pick' + (ticked ? ' on' : '') }),
+        el('div', { class: 'meta' }, [
+          el('b', { text: st.title }),
+          el('span', { text: stmtPeriod(st) + '  ·  ' + (stmtIsPdf(st) ? 'PDF' : 'Image') })
+        ])
+      ]);
+    })));
+
+    if (onChange) onChange();
+  };
+
+  toggle.onclick = () => { on = !on; if (!on) chosen.clear(); paint(); };
+  paint();
+
+  return {
+    host,
+    // only ever what was actually ticked, in the order they are listed
+    picked: () => on ? statements.filter(x => chosen.has(x.id)) : [],
+    count: () => (on ? chosen.size : 0)
+  };
+}
+
+async function buildReport({ rows: list, title, scope, monthKeys, folderScope,
+                             statements: stmts, filename }) {
   const picked = sanitiseRows(list || []);
   if (!picked.length) { toast('Nothing to export in that selection'); return; }
 
@@ -6182,7 +6733,69 @@ async function buildReport({ rows: list, title, scope, monthKeys, folderScope, f
       }
     }
 
-    if (skipped.length) {
+    /* ---------------- the statements, if any were asked for ----------------
+       Appended after the receipts and clearly fenced off by their own title
+       page: they are documents kept alongside the receipts, never part of the
+       figures above. Nothing above this point changes whether they are here or
+       not — with none selected this whole block is skipped and the PDF is
+       exactly the one the app has always produced. */
+    const wanted = stmts || [];
+    const badStatements = [];
+    if (wanted.length) {
+      const divider = doc.addPage([W, H]);
+      divider.drawText(winAnsi('STATEMENTS'),
+        { x: M, y: H / 2 + 10, size: 28, font: bold, color: ink });
+      divider.drawText(winAnsi(
+        wanted.length + ' document' + (wanted.length === 1 ? '' : 's')
+        + ' attached to this report'),
+        { x: M, y: H / 2 - 14, size: 11, font, color: dim });
+      divider.drawText(winAnsi('Kept separately from the receipts and not included in any total above.'),
+        { x: M, y: H / 2 - 32, size: 9, font, color: dim });
+
+      for (let i = 0; i < wanted.length; i++) {
+        const st = wanted[i];
+        busy(true, `Adding statement ${i + 1} of ${wanted.length}…`,
+             (i + 1) / wanted.length);
+        try {
+          const { data: sg, error: sgErr } =
+            await db.storage.from(BUCKET).createSignedUrl(st.file_path, 3600);
+          if (sgErr) throw sgErr;
+          const su = sg && sg.signedUrl;
+          if (!su) throw new Error('missing');
+          const res = await fetch(su);
+          if (!res.ok) throw new Error('unreadable');
+          const sBytes = new Uint8Array(await res.arrayBuffer());
+          if (!sBytes.length) throw new Error('empty');
+
+          const looksPdf = sBytes[0] === 0x25 && sBytes[1] === 0x50;   // %P
+          if (looksPdf) {
+            const src = await PDFDocument.load(sBytes, { ignoreEncryption: true });
+            const copied = await doc.copyPages(src, src.getPageIndices());
+            copied.forEach(pg => doc.addPage(pg));
+            continue;
+          }
+
+          const isPng = sBytes[0] === 0x89 && sBytes[1] === 0x50;
+          const img = isPng ? await doc.embedPng(sBytes) : await doc.embedJpg(sBytes);
+          const pg = doc.addPage([W, H]);
+          pg.drawText(winAnsi(stmtPeriod(st)),
+            { x: M, y: H - M - 11, size: 9, font, color: dim });
+          const tl = wrap(st.title || 'Statement', bold, 14, W - M * 2);
+          tl.slice(0, 2).forEach((ln, k) =>
+            pg.drawText(ln, { x: M, y: H - M - 30 - k * 17, size: 14, font: bold, color: ink }));
+          const boxTop = H - M - 30 - Math.min(tl.length, 2) * 17 - 12;
+          const boxH = boxTop - M, boxW = W - M * 2;
+          const kk = Math.min(boxW / img.width, boxH / img.height);
+          pg.drawImage(img, { x: M + (boxW - img.width * kk) / 2,
+                              y: M + (boxH - img.height * kk) / 2,
+                              width: img.width * kk, height: img.height * kk });
+        } catch {
+          badStatements.push(st);
+        }
+      }
+    }
+
+    if (skipped.length || badStatements.length) {
       const pg = doc.addPage([W, H]);
       pg.drawText(winAnsi('Could not be included'), { x: M, y: H - M - 18, size: 15, font: bold, color: ink });
       let yy = H - M - 44;
@@ -6191,6 +6804,16 @@ async function buildReport({ rows: list, title, scope, monthKeys, folderScope, f
           { x: M, y: yy, size: 10, font, color: dim });
         yy -= 15;
       });
+      if (badStatements.length) {
+        yy -= 10;
+        pg.drawText(winAnsi('Statements'), { x: M, y: yy, size: 11, font: bold, color: ink });
+        yy -= 17;
+        badStatements.forEach(st => {
+          pg.drawText(winAnsi(`${st.period_start}  —  ${st.title}`),
+            { x: M, y: yy, size: 10, font, color: dim });
+          yy -= 15;
+        });
+      }
     }
 
     busy(true, 'Finishing up…');
@@ -6208,7 +6831,10 @@ async function buildReport({ rows: list, title, scope, monthKeys, folderScope, f
     const a = el('a', { href: url, download: name });
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 15000);
-    toast('PDF downloaded');
+    toast(badStatements.length
+      ? `PDF downloaded — ${badStatements.length} statement${badStatements.length === 1 ? '' : 's'} `
+        + 'could not be added; see the last page'
+      : 'PDF downloaded', badStatements.length > 0);
   } catch (e) {
     busy(false);
     toast(niceError(e), true);

@@ -4671,6 +4671,339 @@ async function signIn(page) {
     await ctx.close();
   }
 
+
+  /* ====== PHASE 31 — Statements ======
+     Documents you keep, not figures you count. They have their own page, their
+     own table and their own storage folder, they never touch a receipt, and the
+     receipt PDF only carries them when it is explicitly asked to. */
+  {
+    const ctx = await browser.newContext({
+      viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+    });
+    await ctx.route('**/supabase-js@2**', r =>
+      r.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
+    await ctx.route('**/pixel.png', r =>
+      r.fulfill({ status: 200, contentType: 'image/png', body: PIXEL }));
+    // enough of a PDF for the app's "does this start with %PDF" check
+    const TINYPDF = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n');
+    await ctx.route('**/tiny.pdf', r =>
+      r.fulfill({ status: 200, contentType: 'application/pdf', body: TINYPDF }));
+
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+      const drawn = { text: [], images: 0, pages: 0 };
+      window.__drawn = drawn;
+      const mkPage = () => { drawn.pages++; return {
+        drawText: t => drawn.text.push(String(t)),
+        drawLine: () => {}, drawImage: () => { drawn.images++; },
+      }; };
+      const font = { widthOfTextAtSize: (s, sz) => String(s).length * sz * 0.5 };
+      window.PDFLib = {
+        StandardFonts: { Helvetica: 'h', HelveticaBold: 'hb' },
+        rgb: () => ({}),
+        PDFDocument: {
+          create: async () => ({
+            embedFont: async () => font,
+            embedJpg: async () => ({ width: 400, height: 600 }),
+            embedPng: async () => ({ width: 400, height: 600 }),
+            addPage: mkPage,
+            copyPages: async () => [mkPage()],
+            save: async () => new Uint8Array([37, 80, 68, 70, 45]),
+          }),
+          load: async () => ({ getPageIndices: () => [0] }),
+        },
+      };
+      navigator.share = undefined;
+      navigator.canShare = undefined;
+      window.__downloads = [];
+      const realCreate = document.createElement.bind(document);
+      document.createElement = function (tag) {
+        const n = realCreate(tag);
+        if (tag === 'a') n.click = () => window.__downloads.push(n.download);
+        return n;
+      };
+    });
+
+    await page.goto('http://localhost:8099/', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    await page.evaluate(() => {
+      const d = new Date(); const p = n => String(n).padStart(2, '0');
+      const day = k => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(Math.max(1, d.getDate() - k))}`;
+      window.__mock.rows.push(
+        { id: 'r1', receipt_date: day(2), description: 'Timber', amount: 120, vat: 20,
+          file_path: 'p/r1.jpg', file_type: 'image/jpeg', image_cleared: false,
+          uploader_name: 'finn@x.com', created_at: '2026-01-01T10:00:00Z' },
+        { id: 'r2', receipt_date: day(3), description: 'Fixings', amount: 60, vat: 10,
+          file_path: 'p/r2.jpg', file_type: 'image/jpeg', image_cleared: false,
+          uploader_name: 'finn@x.com', created_at: '2026-01-02T10:00:00Z' });
+    });
+    await page.fill('#em', 'finn@example.com');
+    await page.fill('#pw', 'correct-horse');
+    await page.click('#authbtn');
+    await page.waitForTimeout(1600);
+
+    const receiptsAtStart = await page.evaluate(() => window.__mock.rows.length);
+    const monthTotalAtStart = await page.textContent('#ttotal');
+
+    /* ---------- its own section ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(600);
+    check('Statements is in the side menu, alongside the other sections',
+      await page.isVisible('#mstmt'), 'no menu item');
+    await page.click('#mstmt');
+    await page.waitForTimeout(1200);
+    check('and opens as its own page, not inside receipts',
+      await page.isVisible('#stmt') && !(await page.isVisible('#app')),
+      'statements visible: ' + await page.isVisible('#stmt'));
+    check('it starts empty and says what it is for',
+      /No statements yet/.test(await page.textContent('#stlist')),
+      (await page.textContent('#stlist')).slice(0, 120));
+
+    /* ---------- adding one ---------- */
+    await page.click('#addstatement');
+    await page.waitForTimeout(700);
+    await page.fill('#st_title', 'Barclays — August');
+    await page.fill('#st_from', '2026-08-01');
+    await page.fill('#st_to', '2026-08-31');
+    await page.setInputFiles('#stfile', { name: 'aug.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(500);
+    check('the chosen document is shown before saving',
+      /aug\.png/.test(await page.textContent('#st_file')), await page.textContent('#st_file'));
+    await page.click('#st_save');
+    await page.waitForTimeout(2200);
+
+    const saved = await page.evaluate(() => window.__mock.statements[0]);
+    check('a statement saves to its own table',
+      !!saved && saved.title === 'Barclays — August' &&
+      saved.period_start === '2026-08-01' && saved.period_end === '2026-08-31',
+      JSON.stringify(saved || null));
+    check('its file goes in its own storage folder, never among the receipts',
+      !!saved && saved.file_path.startsWith('statements/'),
+      JSON.stringify(saved && saved.file_path));
+    check('and it is listed with its name, period and type',
+      /Barclays/.test(await page.textContent('#stlist')) &&
+      /August/.test(await page.textContent('#stlist')) &&
+      (await page.$$('#stlist .strow')).length === 1,
+      (await page.textContent('#stlist')).slice(0, 160));
+
+    // a second one, this time a PDF
+    await page.click('#addstatement');
+    await page.waitForTimeout(700);
+    await page.fill('#st_title', 'Amex — August');
+    await page.fill('#st_from', '2026-08-05');
+    await page.setInputFiles('#stfile',
+      { name: 'amex.pdf', mimeType: 'application/pdf', buffer: TINYPDF });
+    await page.waitForTimeout(400);
+    await page.click('#st_save');
+    await page.waitForTimeout(2200);
+    check('a PDF statement saves as a PDF',
+      await page.evaluate(() =>
+        (window.__mock.statements.find(s => s.title === 'Amex — August') || {}).file_type)
+        === 'application/pdf',
+      JSON.stringify(await page.evaluate(() => window.__mock.statements.map(s => s.file_type))));
+    check('both are listed', (await page.$$('#stlist .strow')).length === 2,
+      (await page.$$('#stlist .strow')).length);
+    await page.screenshot({ path: `${ROOT}/n43-statements.png` });
+
+    /* ---------- they stay out of receipts entirely ---------- */
+    check('no statement became a receipt',
+      await page.evaluate(() => window.__mock.rows.length) === receiptsAtStart,
+      await page.evaluate(() => window.__mock.rows.length));
+    await page.click('#stback');
+    await page.waitForTimeout(800);
+    check('back lands on the receipt calendar',
+      await page.isVisible('#app') && !(await page.isVisible('#stmt')), 'did not go back');
+    check('the month total is untouched by them',
+      (await page.textContent('#ttotal')) === monthTotalAtStart,
+      await page.textContent('#ttotal') + ' vs ' + monthTotalAtStart);
+    check('and they are not in Recently Added',
+      !/Barclays|Amex/.test(await page.textContent('#recentlist')),
+      (await page.textContent('#recentlist')).slice(0, 140));
+
+    /* ---------- opening, downloading, editing ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#mstmt');
+    await page.waitForTimeout(1200);
+    await page.click('.strow:has-text("Barclays") .stopen');
+    await page.waitForTimeout(2200);
+    check('Open uses the viewer the app already has',
+      await page.isVisible('#aviewer') && await page.isVisible('#avimg'),
+      'viewer: ' + await page.isVisible('#aviewer'));
+    check('and it is a read-only view — no Add to Receipts on a statement',
+      (await page.$$('#avadd')).length === 0, 'an add button appeared');
+    await page.click('#avclose');
+    await page.waitForTimeout(600);
+    check('closing returns to the statements list',
+      !(await page.isVisible('#aviewer')) && await page.isVisible('#stmt'), 'did not return');
+
+    await page.click('.strow:has-text("Amex") .stget');
+    await page.waitForTimeout(1800);
+    check('Download gives back the original file, still a PDF',
+      await page.evaluate(() => (window.__downloads || []).some(n => /Amex.*\.pdf$/.test(n))),
+      JSON.stringify(await page.evaluate(() => window.__downloads)));
+
+    await page.click('.strow:has-text("Barclays") .stedit');
+    await page.waitForTimeout(800);
+    await page.fill('#st_title', 'Barclays current — August');
+    await page.click('#st_save');
+    await page.waitForTimeout(2000);
+    check('editing the details keeps the same document',
+      await page.evaluate(() => {
+        const s = window.__mock.statements.find(x => x.title === 'Barclays current — August');
+        return !!s && s.file_path.startsWith('statements/');
+      }), JSON.stringify(await page.evaluate(() => window.__mock.statements.map(s => s.title))));
+
+    /* ---------- the export, with them off ---------- */
+    await page.click('#stback');
+    await page.waitForTimeout(700);
+    await page.evaluate(() => { window.__drawn.text = []; window.__drawn.pages = 0; });
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('.ditem:has-text("Select Months")');
+    await page.waitForTimeout(1400);
+    check('the export offers Include Statements, switched off',
+      await page.isVisible('#incstmts') &&
+      !(await page.evaluate(() => document.querySelector('#incpick').classList.contains('on'))),
+      'toggle missing or already on');
+    check('and nothing is ticked until it is turned on',
+      (await page.$$('#stsel .incrow')).length === 0, 'statements listed while off');
+
+    await page.click('#selbodyfirst, .selbody .selrow');
+    await page.waitForTimeout(600);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3000);
+    const plain = await page.evaluate(() => ({
+      pages: window.__drawn.pages, hasDivider: window.__drawn.text.some(t => /^STATEMENTS$/.test(t))
+    }));
+    check('with it off the PDF is the receipt report exactly as before',
+      plain.pages > 0 && !plain.hasDivider, JSON.stringify(plain));
+
+    /* ---------- and with them on ---------- */
+    await page.evaluate(() => { window.__drawn.text = []; window.__drawn.pages = 0; });
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('.ditem:has-text("Select Months")');
+    await page.waitForTimeout(1400);
+    await page.click('.selbody .selrow');
+    await page.waitForTimeout(500);
+    await page.click('#incstmts');
+    await page.waitForTimeout(700);
+    check('turning it on lists the statements to choose from',
+      (await page.$$('#stsel .incrow')).length === 2, (await page.$$('#stsel .incrow')).length);
+    check('with none of them ticked to start with',
+      /None selected yet/.test(await page.textContent('#inccount')),
+      await page.textContent('#inccount'));
+
+    await page.click('#incall');
+    await page.waitForTimeout(600);
+    check('Select all ticks them and says how many',
+      /2 selected/.test(await page.textContent('#inccount')) &&
+      /2 of 2 selected/.test(await page.textContent('#stsel')),
+      await page.textContent('#inccount'));
+    await page.click('#stsel .incrow');
+    await page.waitForTimeout(500);
+    check('and one can be taken off again',
+      /1 selected/.test(await page.textContent('#inccount')), await page.textContent('#inccount'));
+    await page.click('#incall');
+    await page.waitForTimeout(600);
+    check('the download button says what it is about to make',
+      /\+ 2 statements/.test(await page.textContent('.sfoot .btn-primary')),
+      await page.textContent('.sfoot .btn-primary'));
+
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3600);
+    const withStmts = await page.evaluate(() => ({
+      pages: window.__drawn.pages,
+      divider: window.__drawn.text.some(t => /^STATEMENTS$/.test(t)),
+      fenced: window.__drawn.text.some(t => /not included in any total/i.test(t)),
+      named: window.__drawn.text.some(t => /Barclays current/.test(t))
+    }));
+    check('the statements are appended to the same PDF',
+      withStmts.pages > plain.pages, JSON.stringify(withStmts));
+    check('behind a STATEMENTS divider page',
+      withStmts.divider, JSON.stringify(withStmts));
+    check('which says plainly they are not part of the totals',
+      withStmts.fenced, JSON.stringify(withStmts));
+    check('a PDF statement is merged and an image one gets its own titled page',
+      withStmts.named, JSON.stringify(withStmts));
+
+    /* ---------- a statement whose file has gone ---------- */
+    await page.evaluate(() => {
+      window.__mock.missingFiles.add(
+        window.__mock.statements.find(s => /Amex/.test(s.title)).file_path);
+      window.__drawn.text = []; window.__drawn.pages = 0;
+    });
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('.ditem:has-text("Select Months")');
+    await page.waitForTimeout(1400);
+    await page.click('.selbody .selrow');
+    await page.waitForTimeout(500);
+    await page.click('#incstmts');
+    await page.waitForTimeout(600);
+    await page.click('#incall');
+    await page.waitForTimeout(600);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(3600);
+    check('one unreadable statement does not sink the export',
+      await page.evaluate(() => window.__drawn.pages) > 0 &&
+      await page.evaluate(() => document.querySelector('#busy').classList.contains('hide')),
+      'export died or stuck');
+    check('it is named on the could-not-be-included page and said out loud',
+      await page.evaluate(() => window.__drawn.text.some(t => /Amex/.test(t))) &&
+      /could not be added/i.test(await page.textContent('#toast').catch(() => '')),
+      await page.textContent('#toast').catch(() => 'no toast'));
+
+    /* ---------- receipts are exactly as they were ---------- */
+    await page.evaluate(() => startCapture('file', ymd(new Date())));
+    await page.waitForTimeout(300);
+    await page.setInputFiles('#ffile', { name: 'r.png', mimeType: 'image/png', buffer: PIXEL });
+    await page.waitForTimeout(2500);
+    check('a new receipt asks for nothing about statements',
+      (await page.$$('.sbody #st_title, .sbody #st_from, .sbody #st_pick')).length === 0,
+      'a statement field appeared on the receipt form');
+    await page.fill('#f_desc', 'Ordinary receipt');
+    await page.fill('#f_amt', '44');
+    await page.dispatchEvent('#f_amt', 'input');
+    await page.waitForTimeout(400);
+    await page.click('.sfoot .btn-primary');
+    await page.waitForTimeout(2600);
+    if (await page.evaluate(() => !!document.querySelector('#askhost'))) {
+      await page.click('#askhost .btn-danger');
+      await page.waitForTimeout(2000);
+    }
+    const fresh = await page.evaluate(() =>
+      window.__mock.rows.find(r => r.description === 'Ordinary receipt'));
+    check('and it still saves exactly as it did',
+      !!fresh && fresh.amount === 44 && fresh.vat === 7.33, JSON.stringify(fresh || null));
+    check('with no statement fields written to it',
+      !!fresh && !('statement_id' in fresh) && !('period_start' in fresh),
+      JSON.stringify(Object.keys(fresh || {})));
+
+    /* ---------- deleting ---------- */
+    await page.click('#menu');
+    await page.waitForTimeout(500);
+    await page.click('#mstmt');
+    await page.waitForTimeout(1200);
+    await page.click('.strow:has-text("Amex") .stdel');
+    await page.waitForTimeout(800);
+    check('deleting asks first', /cannot be undone/i.test(await page.textContent('#askhost')),
+      (await page.textContent('#askhost')).slice(0, 120));
+    await page.click('#askhost .btn-danger');
+    await page.waitForTimeout(2000);
+    check('and then it is gone',
+      await page.evaluate(() => window.__mock.statements.length) === 1 &&
+      (await page.$$('#stlist .strow')).length === 1,
+      await page.evaluate(() => window.__mock.statements.length));
+
+    check('no JS errors anywhere in Statements', errors.length === 0, JSON.stringify(errors));
+    await ctx.close();
+  }
+
   console.log('\n=== PASS (' + pass.length + ') ===');
   pass.forEach(p => console.log('  ✓ ' + p));
   if (fail.length) {

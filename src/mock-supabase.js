@@ -7,6 +7,7 @@
     projects: [],
     site_records: [],
     site_photos: [],
+    statements: [],
     missingTables: new Set(),   // name a table here to simulate "not created yet"
     // name a column here to simulate a migration that was never run: any insert
     // or select mentioning it fails the way PostgREST really fails
@@ -14,15 +15,19 @@
     session: null,
     listeners: [],
     files: new Map(),
+    missingFiles: new Set(),   // name a path here to simulate a file gone from storage
   };
   root.__mock = store;
 
   function emit(evt) { store.listeners.forEach(fn => fn(evt, store.session)); }
 
+  const urlFor = p => /\.pdf$/i.test(String(p)) ? '/tiny.pdf' : '/pixel.png';
+
   function builder(table) {
     const q = { table, _filters: [], _op: null, _payload: null,
                 _cols: [], _filterCols: [] };
-    const named = ['folders', 'plans', 'projects', 'site_records', 'site_photos'];
+    const named = ['folders', 'plans', 'projects', 'site_records', 'site_photos',
+                   'statements'];
     const bag = () => (named.includes(table) ? store[table] : store.rows);
     const setBag = v => { if (named.includes(table)) store[table] = v; else store.rows = v; };
     q._bag = bag; q._setBag = setBag;
@@ -96,6 +101,11 @@
           : q.table === 'site_photos'
           ? { id: 'sp-' + Math.random().toString(36).slice(2, 9),
               created_at: new Date().toISOString(), sort: 0 }
+          : q.table === 'statements'
+          ? { id: 'st-' + Math.random().toString(36).slice(2, 9),
+              created_at: new Date().toISOString(),
+              period_end: null, category: null, project_id: null,
+              file_type: null, file_size: null, created_by_name: null }
           : { id: 'id-' + Math.random().toString(36).slice(2, 9),
               created_at: new Date().toISOString(), vendor: null, amount: null,
               vat: null, net: null, vat_rate: null, folder_id: null, currency: 'GBP' };
@@ -155,11 +165,14 @@
                 store.files.set(path, { size: blob.size, type: opts?.contentType });
                 return { data: { path }, error: null };
               },
+              // a .pdf path gets a pdf back, so the merge branch is exercised
               async createSignedUrls(paths) {
-                return { data: paths.map(p => ({ path: p, signedUrl: '/pixel.png' })), error: null };
+                return { data: paths.map(p => ({ path: p, signedUrl: urlFor(p) })), error: null };
               },
               async createSignedUrl(p) {
-                return { data: { signedUrl: '/pixel.png' }, error: null };
+                if (store.missingFiles.has(p))
+                  return { data: null, error: { message: 'Object not found' } };
+                return { data: { signedUrl: urlFor(p) }, error: null };
               },
               async remove(paths) { paths.forEach(p => store.files.delete(p)); return { error: null }; },
             };
